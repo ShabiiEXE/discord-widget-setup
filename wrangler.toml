@@ -6,6 +6,10 @@ compatibility_date = "2026-07-23"
 directory = "./public"
 binding = "ASSETS"
 
+[[services]]
+binding = "GAMELIST"
+service = "gamelist"
+
 [triggers]
 crons = ["*/30 * * * *"]
 

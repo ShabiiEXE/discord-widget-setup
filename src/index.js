@@ -190,12 +190,7 @@ async function buildWidgetData(env) {
 
 async function getJson(env, path) {
   const targetUrl = `${baseUrl(env)}${path}`;
-  const response = await fetch(targetUrl, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "gamelist-discord-widget/1.0",
-    },
-  });
+  const response = await fetchGamelist(env, path);
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     const excerpt = text ? `: ${text.slice(0, 200)}` : "";
@@ -225,17 +220,13 @@ async function healthCheck(env) {
   const checks = await Promise.all(paths.map(async (path) => {
     const startedAt = Date.now();
     try {
-      const response = await fetch(`${baseUrl(env)}${path}`, {
-        headers: {
-          Accept: "application/json",
-          "User-Agent": "gamelist-discord-widget/1.0",
-        },
-      });
+      const response = await fetchGamelist(env, path);
       const body = response.ok ? "" : await response.text().catch(() => "");
       return {
         path,
         ok: response.ok,
         status: response.status,
+        fetchMode: env.GAMELIST ? "service-binding" : "global-fetch",
         body: body.slice(0, 200),
         ms: Date.now() - startedAt,
       };
@@ -252,9 +243,21 @@ async function healthCheck(env) {
   return {
     ok: checks.every((check) => check.ok),
     baseUrl: baseUrl(env),
+    fetchMode: env.GAMELIST ? "service-binding" : "global-fetch",
     checks,
     checkedAt: new Date().toISOString(),
   };
+}
+
+function fetchGamelist(env, path) {
+  const request = new Request(`${baseUrl(env)}${path}`, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "gamelist-discord-widget/1.0",
+    },
+  });
+
+  return env.GAMELIST ? env.GAMELIST.fetch(request) : fetch(request);
 }
 
 function playingGames(syncData) {

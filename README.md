@@ -84,6 +84,16 @@ TOTAL_COMPLETED_COUNT = "41"
 TOTAL_COMPLETED_THIS_YEAR = "1"
 ```
 
+The Worker calls the Gamelist Worker through a Cloudflare Service Binding:
+
+```toml
+[[services]]
+binding = "GAMELIST"
+service = "gamelist"
+```
+
+If your main Gamelist Worker has a different Cloudflare service name, update `service = "gamelist"` before deploying.
+
 ## Local Dev
 
 For local testing, create `.dev.vars`:

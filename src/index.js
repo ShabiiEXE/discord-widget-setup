@@ -105,7 +105,7 @@ async function buildWidgetData(env) {
     getJson(env, "/api/gamelist-games-by-list"),
     getJson(env, "/api/completed-games-by-year"),
     maybeGetJson(env, "/api/achievement-completions-by-year"),
-    getJson(env, "/api/shelf-games-platforms"),
+    maybeGetJson(env, "/api/shelf-games-platforms"),
     getJson(env, "/api/sync"),
     maybeGetJson(env, "/api/achievements"),
   ]);
@@ -140,7 +140,7 @@ async function buildWidgetData(env) {
         imageField(env, "finished_image", statImages(env).finished),
         textField("backlog_games", backlogCount(lists)),
         imageField(env, "backlog_image", statImages(env).backlog),
-        textField("shelf_games", Number(shelf.totalGames || 0)),
+        textField("shelf_games", shelfCount(shelf, sync)),
         imageField(env, "shelf_image", statImages(env).shelf),
         numberField("completed_games", achievementCompletionCount(env, achievementCompletions)),
         textField("rotation_note", playing.length > 1 ? `Randomized from ${playing.length} games on each update` : ""),
@@ -199,6 +199,12 @@ function startedSortValue(game) {
 
 function backlogCount(listsData) {
   return (listsData.lists || []).find((item) => item.list === "backlog")?.count || 0;
+}
+
+function shelfCount(shelfData, syncData) {
+  const shelfTotal = Number(shelfData?.totalGames || 0);
+  if (shelfTotal) return shelfTotal;
+  return Array.isArray(syncData?.games) ? syncData.games.filter((game) => !game.deletedAt).length : 0;
 }
 
 function achievementCompletionCount(env, completionsData) {

@@ -7,18 +7,25 @@
   <style>
     :root {
       color-scheme: dark;
-      --bg: #101114;
-      --card: #181b21;
-      --card2: #222733;
+      --bg: #161619;
+      --card: rgba(20, 22, 28, 0.58);
+      --card2: rgba(28, 31, 40, 0.82);
       --text: #f5f7fb;
-      --muted: #b9c0cf;
-      --line: #343b4d;
-      --blue: #8aa4ff;
-      --green: #77e3bb;
+      --muted: #a6adbd;
+      --line: rgba(255, 255, 255, 0.13);
+      --blue: #ff0039;
+      --green: #79f2ce;
       --yellow: #ffd166;
-      --red: #ff8a9a;
+      --red: #ff6f85;
       --code: #0b0d11;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --accent: #ff0039;
+      --accent-1: #79f2ce;
+      --glow-primary: rgba(255, 0, 81, 0.22);
+      --glow-secondary: rgba(0, 0, 255, 0.14);
+      --grid-texture:
+        linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+      font-family: "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
 
     * { box-sizing: border-box; }
@@ -26,8 +33,12 @@
     body {
       margin: 0;
       background:
-        radial-gradient(circle at top left, rgba(138, 164, 255, 0.22), transparent 34rem),
-        linear-gradient(180deg, #11141a, #0d0f13 42rem);
+        radial-gradient(circle at 78% 9%, var(--glow-primary), transparent 30rem),
+        radial-gradient(circle at 11% 84%, var(--glow-secondary), transparent 34rem),
+        linear-gradient(120deg, rgba(255, 255, 255, 0.04), transparent 38%),
+        var(--grid-texture),
+        var(--bg);
+      background-size: auto, auto, auto, 24px 24px, 24px 24px, auto;
       color: var(--text);
       line-height: 1.55;
     }
@@ -52,6 +63,7 @@
       font-size: clamp(36px, 6vw, 64px);
       line-height: 1;
       letter-spacing: 0;
+      color: var(--accent);
     }
 
     h2 {
@@ -91,8 +103,10 @@
       margin: 16px 0;
       border: 1px solid var(--line);
       border-radius: 8px;
-      background: rgba(24, 27, 33, 0.94);
+      background: var(--card);
       padding: 20px;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+      backdrop-filter: blur(18px);
     }
 
     .two {
@@ -135,7 +149,7 @@
       height: 38px;
       border-radius: 8px;
       background: var(--blue);
-      color: #080a10;
+      color: #ffffff;
       font-weight: 900;
     }
 
@@ -144,8 +158,8 @@
       margin: 8px 0 0;
       padding: 7px 10px;
       border-radius: 8px;
-      background: rgba(119, 227, 187, 0.12);
-      border: 1px solid rgba(119, 227, 187, 0.35);
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 48%, transparent);
       color: var(--text);
       font-weight: 700;
     }

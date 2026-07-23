@@ -1,6 +1,6 @@
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
-const MIN_COMPLETED_GAMES = 41;
+const STATUS_CACHE_URL = "https://gamelist-discord-widget.local/status";
 const FALLBACK_SYNC_DATA = {
   games: [
     {
@@ -51,13 +51,8 @@ export default {
         return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
       }
 
-      try {
-        const result = await updateDiscordWidget(env, "manual");
-        return jsonResponse({ ok: true, ...result });
-      } catch (error) {
-        console.error(error);
-        return jsonResponse(errorPayload(error), 500);
-      }
+      const result = await runAndRecordUpdate(env, "manual");
+      return jsonResponse(result, result.ok ? 200 : 500);
     }
 
     if (url.pathname === "/widget-data") {
@@ -81,13 +76,35 @@ export default {
       return jsonResponse(await healthCheck(env));
     }
 
+    if (url.pathname === "/status") {
+      return jsonResponse(await readUpdateStatus());
+    }
+
     return homePage();
   },
 
   async scheduled(_event, env, ctx) {
-    ctx.waitUntil(updateDiscordWidget(env, "scheduled"));
+    ctx.waitUntil(runAndRecordUpdate(env, "scheduled"));
   },
 };
+
+async function runAndRecordUpdate(env, source) {
+  try {
+    const result = await updateDiscordWidget(env, source);
+    const status = { ok: true, ...result };
+    await writeUpdateStatus(status);
+    return status;
+  } catch (error) {
+    console.error(error);
+    const status = {
+      ...errorPayload(error),
+      source,
+      updatedAt: new Date().toISOString(),
+    };
+    await writeUpdateStatus(status);
+    return status;
+  }
+}
 
 async function updateDiscordWidget(env, source) {
   assertRequiredEnv(env, ["DISCORD_BOT_TOKEN", "DISCORD_USER_ID", "DISCORD_APP_ID"]);
@@ -134,6 +151,7 @@ async function buildWidgetData(env) {
   ]);
 
   const syncData = sync || FALLBACK_SYNC_DATA;
+  const providerCompletions = await providerCompletionSummary(env, syncData, achievementCompletions, activity);
   const playing = playingGames(syncData);
   const selectedGames = rotatePlayingGames(playing, 3);
   const coverGame = selectedGames.find((game) => game?.cover) || null;
@@ -159,7 +177,7 @@ async function buildWidgetData(env) {
         imageField(env, "game_subtitle_3_image", subtitleIcons[2]),
         textField("game_subtitle_3", subtitles[2]),
         textField("game_subtitle_3_trophies", subtitleTrophies[2]),
-        textField("total_completed_count", achievementCompletionSummary(env, achievementCompletions)),
+        textField("total_completed_count", achievementCompletionSummary(env, providerCompletions)),
         imageField(env, "total_completed_count_image", statImages(env).completed),
         textField("finished_this_year", finishedThisYear(finished, syncData)),
         imageField(env, "finished_image", statImages(env).finished),
@@ -167,7 +185,7 @@ async function buildWidgetData(env) {
         imageField(env, "backlog_image", statImages(env).backlog),
         textField("shelf_games", shelfCount(shelf, syncData)),
         imageField(env, "shelf_image", statImages(env).shelf),
-        numberField("completed_games", achievementCompletionCount(env, achievementCompletions)),
+        numberField("completed_games", achievementCompletionCount(env, providerCompletions)),
         textField("rotation_note", sync ? (playing.length > 1 ? `Randomized from ${playing.length} games on each update` : "") : "Using fallback data"),
       ],
     },
@@ -336,11 +354,160 @@ function shelfCount(shelfData, syncData) {
   return Array.isArray(syncData?.games) ? syncData.games.filter((game) => !game.deletedAt).length : 0;
 }
 
+async function providerCompletionSummary(env, syncData, summaryData, psnActivity) {
+  const settings = syncData?.settings || {};
+  const [psn, steam, xbox] = await Promise.all([
+    psnCompletionData(env, settings, psnActivity),
+    steamCompletionData(env, settings),
+    xboxCompletionData(env, settings),
+  ]);
+
+  const summaryPlatforms = (summaryData?.platforms || [])
+    .filter((platform) => ["psn", "steam", "xbox"].includes(String(platform.source || "").toLowerCase()));
+  const directBySource = new Map([psn, steam, xbox].map((platform) => [platform.source, platform]));
+  const platforms = ["psn", "steam", "xbox"].map((source) => {
+    const direct = directBySource.get(source);
+    const summary = summaryPlatforms.find((platform) => String(platform.source || "").toLowerCase() === source);
+    return Number(direct.totalCompletedGames || 0) || !summary ? direct : normalizeCompletionPlatform(summary, source);
+  });
+
+  const completedGamesByYear = countByYear(platforms.flatMap((platform) => platform.completedGames || []));
+  return {
+    source: "provider-completions",
+    platforms,
+    providerTotals: Object.fromEntries(platforms.map((platform) => [platform.source, platform.totalCompletedGames])),
+    completedGames: platforms.flatMap((platform) => platform.completedGames || []),
+    completedGamesByYear,
+    totalCompletedGames: platforms.reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0),
+  };
+}
+
+async function psnCompletionData(env, settings, existingData) {
+  const user = cleanEnv(settings.psnUser);
+  const data = existingData || await maybeGetJson(env, `/api/achievements?${new URLSearchParams({ schema: "3", user })}`);
+  const completedGames = (data?.platinums || []).map((item) => ({
+    title: item.title || item.game || "",
+    rawEarnedAt: item.rawEarnedAt || item.earnedAt || "",
+    source: "psn",
+  }));
+  return {
+    source: "psn",
+    platform: "PlayStation",
+    completedGames,
+    completedGamesByYear: countByYear(completedGames),
+    totalCompletedGames: completedGames.length,
+  };
+}
+
+async function steamCompletionData(env, settings) {
+  const user = cleanEnv(settings.steamUser);
+  if (!user) return emptyCompletionPlatform("steam", "Steam");
+
+  const completedGames = [];
+  let cursor = 0;
+  for (let page = 0; page < 20 && cursor !== null; page += 1) {
+    const params = new URLSearchParams({ activity: "1", limit: "20", debug: "1", user, cursor: String(cursor) });
+    const data = await maybeGetJson(env, `/api/steam-achievements?${params}`);
+    if (!data || data.needsSetup || data.authError || data.error) break;
+
+    for (const game of data.games || []) {
+      if (isCompletedAchievementGame(game)) {
+        completedGames.push({
+          title: game.name || game.title || "",
+          rawEarnedAt: latestEarnedAt(game.achievements || []),
+          source: "steam",
+        });
+      }
+    }
+
+    cursor = data.nextCursor !== null && Number.isFinite(Number(data.nextCursor)) ? Number(data.nextCursor) : null;
+  }
+
+  return {
+    source: "steam",
+    platform: "Steam",
+    completedGames,
+    completedGamesByYear: countByYear(completedGames),
+    totalCompletedGames: completedGames.length,
+  };
+}
+
+async function xboxCompletionData(env, settings) {
+  const user = cleanEnv(settings.microsoftUser);
+  const params = new URLSearchParams({ schema: "2" });
+  if (user) params.set("user", user);
+  const data = await maybeGetJson(env, `/api/xbox-achievements?${params}`);
+  const completedGames = [
+    ...(data?.completed || []),
+    ...(data?.games || []).filter((game) => Number(game.total || 0) > 0 && Number(game.earned || 0) >= Number(game.total || 0)),
+  ].map((item) => ({
+    title: item.title || item.name || "",
+    rawEarnedAt: item.rawEarnedAt || item.earnedAt || "",
+    source: "xbox",
+  }));
+  return {
+    source: "xbox",
+    platform: "Xbox",
+    completedGames,
+    completedGamesByYear: countByYear(completedGames),
+    totalCompletedGames: completedGames.length,
+  };
+}
+
+function normalizeCompletionPlatform(platform, source) {
+  const completedGames = (platform.completedGames || []).map((item) => ({ ...item, source }));
+  return {
+    source,
+    platform: platform.platform || source,
+    completedGames,
+    completedGamesByYear: platform.completedGamesByYear || countByYear(completedGames),
+    totalCompletedGames: Number(platform.totalCompletedGames || completedGames.length || 0),
+  };
+}
+
+function emptyCompletionPlatform(source, platform) {
+  return { source, platform, completedGames: [], completedGamesByYear: [], totalCompletedGames: 0 };
+}
+
+function isCompletedAchievementGame(game) {
+  const achievements = game?.achievements || [];
+  return achievements.length > 0 && achievements.every((achievement) => achievement.earned);
+}
+
+function latestEarnedAt(achievements) {
+  return achievements
+    .map((achievement) => achievement.rawEarnedAt || achievement.earnedAt || "")
+    .filter(Boolean)
+    .sort()
+    .at(-1) || "";
+}
+
+function countByYear(items) {
+  const counts = new Map();
+  for (const item of items) {
+    const year = completionYear(item.rawEarnedAt || item.earnedAt);
+    if (!year) continue;
+    counts.set(year, (counts.get(year) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => String(b[0]).localeCompare(String(a[0])))
+    .map(([year, count]) => ({ year, count }));
+}
+
+function completionYear(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const iso = raw.match(/^(\d{4})/);
+  if (iso) return iso[1];
+  const time = Date.parse(raw);
+  return Number.isFinite(time) ? String(new Date(time).getUTCFullYear()) : "";
+}
+
 function achievementCompletionCount(env, completionsData) {
   const apiTotal = Number(completionsData?.totalCompletedGames || 0)
     || (Array.isArray(completionsData?.completedGames) ? completionsData.completedGames.length : 0)
     || (completionsData?.platforms || []).reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0);
-  return Math.max(apiTotal, MIN_COMPLETED_GAMES);
+  return apiTotal;
 }
 
 function achievementCompletionsThisYear(env, completionsData) {
@@ -355,6 +522,55 @@ function achievementCompletionsThisYear(env, completionsData) {
 
 function achievementCompletionSummary(env, completionsData) {
   return `${achievementCompletionCount(env, completionsData)} (${achievementCompletionsThisYear(env, completionsData)} this year)`;
+}
+
+async function readUpdateStatus() {
+  const fallback = {
+    ok: null,
+    source: "",
+    updatedAt: "",
+    error: "",
+    nextScheduledAt: nextScheduledUpdateIso(),
+  };
+  try {
+    const response = await caches.default.match(statusCacheRequest());
+    if (!response) return fallback;
+    return { ...fallback, ...(await response.json()), nextScheduledAt: nextScheduledUpdateIso() };
+  } catch {
+    return fallback;
+  }
+}
+
+async function writeUpdateStatus(status) {
+  try {
+    await caches.default.put(statusCacheRequest(), new Response(JSON.stringify({
+      ...status,
+      nextScheduledAt: nextScheduledUpdateIso(),
+    }), {
+      headers: {
+        "Content-Type": "application/json; charset=utf-8",
+        "Cache-Control": "public, max-age=604800",
+      },
+    }));
+  } catch {
+    // Status is best-effort; widget updates should not fail if cache writes do.
+  }
+}
+
+function statusCacheRequest() {
+  return new Request(STATUS_CACHE_URL);
+}
+
+function nextScheduledUpdateIso(now = new Date()) {
+  const next = new Date(now);
+  const minutes = next.getUTCMinutes();
+  next.setUTCSeconds(0, 0);
+  if (minutes < 30) {
+    next.setUTCMinutes(30);
+  } else {
+    next.setUTCHours(next.getUTCHours() + 1, 0);
+  }
+  return next.toISOString();
 }
 
 function finishedThisYear(completedData, syncData) {
@@ -663,6 +879,25 @@ function homePage() {
         <a class="button protected" data-path="/widget-data" href="/widget-data?secret=YOUR_REFRESH_SECRET">Preview widget data</a>
       </div>
 
+      <section class="status-panel">
+        <div>
+          <span>Last update</span>
+          <strong id="last-updated">Never</strong>
+        </div>
+        <div>
+          <span>Type</span>
+          <strong id="last-source">-</strong>
+        </div>
+        <div>
+          <span>Next update</span>
+          <strong id="next-countdown">-</strong>
+        </div>
+        <div>
+          <span>Result</span>
+          <strong id="last-result">Unknown</strong>
+        </div>
+      </section>
+
       <p id="status" class="note"></p>
     </main>
     <script>
@@ -670,6 +905,7 @@ function homePage() {
       const input = document.getElementById("secret");
       const status = document.getElementById("status");
       const protectedLinks = [...document.querySelectorAll(".protected")];
+      let nextUpdateAt = "";
 
       function updateLinks() {
         const secret = input.value.trim();
@@ -694,6 +930,45 @@ function homePage() {
         updateLinks();
         status.textContent = "Secret cleared.";
       });
+
+      function madridTime(value) {
+        if (!value) return "Never";
+        return new Intl.DateTimeFormat("en-GB", {
+          timeZone: "Europe/Madrid",
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(new Date(value));
+      }
+
+      function updateCountdown() {
+        const target = nextUpdateAt ? new Date(nextUpdateAt).getTime() : 0;
+        const remaining = Math.max(0, target - Date.now());
+        const minutes = Math.floor(remaining / 60000);
+        const seconds = Math.floor((remaining % 60000) / 1000);
+        document.getElementById("next-countdown").textContent = target
+          ? String(minutes).padStart(2, "0") + ":" + String(seconds).padStart(2, "0")
+          : "-";
+      }
+
+      async function loadStatus() {
+        try {
+          const response = await fetch("/status", { cache: "no-store" });
+          const data = await response.json();
+          nextUpdateAt = data.nextScheduledAt || "";
+          document.getElementById("last-updated").textContent = madridTime(data.updatedAt);
+          document.getElementById("last-source").textContent = data.source || "-";
+          const result = document.getElementById("last-result");
+          result.textContent = data.ok === true ? "Success" : data.ok === false ? "Failed" : "Unknown";
+          result.className = data.ok === true ? "success" : data.ok === false ? "failed" : "";
+          if (data.ok === false && data.error) status.textContent = "Last failure: " + data.error;
+          updateCountdown();
+        } catch {
+          status.textContent = "Could not load update status.";
+        }
+      }
+
+      loadStatus();
+      setInterval(updateCountdown, 1000);
     </script>
   `));
 }
@@ -775,10 +1050,28 @@ function pageShell(title, body) {
   <style>
     :root {
       color-scheme: dark;
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #111318;
-      color: #f4f6fb;
+      --bg: #161619;
+      --panel: rgba(20, 22, 28, 0.58);
+      --panel-strong: rgba(28, 31, 40, 0.82);
+      --line: rgba(255, 255, 255, 0.13);
+      --text: #f6f7fb;
+      --muted: #a6adbd;
+      --dim: #6f7789;
+      --accent: #ff0039;
+      --accent-1: #79f2ce;
+      --danger: #ff6f85;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.48);
+      --glow-primary: rgba(255, 0, 81, 0.22);
+      --glow-secondary: rgba(0, 0, 255, 0.14);
+      --grid-texture:
+        linear-gradient(rgba(255, 255, 255, 0.016) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
+      font-family: "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      background: var(--bg);
+      color: var(--text);
     }
+
+    * { box-sizing: border-box; }
 
     body {
       margin: 0;
@@ -786,10 +1079,23 @@ function pageShell(title, body) {
       display: grid;
       place-items: center;
       padding: 24px;
+      background:
+        radial-gradient(circle at 78% 9%, var(--glow-primary), transparent 30rem),
+        radial-gradient(circle at 11% 84%, var(--glow-secondary), transparent 34rem),
+        linear-gradient(120deg, rgba(255, 255, 255, 0.04), transparent 38%),
+        var(--grid-texture),
+        var(--bg);
+      background-size: auto, auto, auto, 24px 24px, 24px 24px, auto;
     }
 
     main {
       width: min(620px, 100%);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      padding: clamp(20px, 4vw, 32px);
+      backdrop-filter: blur(18px);
     }
 
     h1 {
@@ -797,16 +1103,19 @@ function pageShell(title, body) {
       font-size: 32px;
       line-height: 1.1;
       letter-spacing: 0;
+      color: var(--accent);
     }
 
     p {
-      color: #c8cedc;
+      color: var(--muted);
       line-height: 1.55;
     }
 
+    a { color: var(--accent-1); }
+
     code {
-      color: #ffffff;
-      background: #242936;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.08);
       padding: 2px 5px;
       border-radius: 4px;
     }
@@ -822,15 +1131,27 @@ function pageShell(title, body) {
       display: inline-flex;
       justify-content: center;
       align-items: center;
+      gap: 8px;
       min-height: 44px;
-      border: 0;
-      border-radius: 6px;
-      background: #5865f2;
-      color: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      background: rgba(255, 255, 255, 0.07);
+      color: var(--text);
       font: inherit;
       font-weight: 700;
       text-decoration: none;
       cursor: pointer;
+      transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+    }
+
+    .button:hover,
+    button:hover {
+      border-color: color-mix(in srgb, var(--accent) 58%, transparent);
+      background: color-mix(in srgb, var(--accent) 28%, transparent);
+      box-shadow:
+        0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent),
+        0 10px 28px color-mix(in srgb, var(--accent) 12%, transparent);
+      transform: translateY(-1px);
     }
 
     label {
@@ -844,10 +1165,10 @@ function pageShell(title, body) {
       width: 100%;
       min-height: 44px;
       padding: 10px 12px;
-      border: 1px solid #343b4d;
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #191d27;
-      color: #f4f6fb;
+      background: rgba(16, 17, 20, 0.72);
+      color: var(--text);
       font: inherit;
     }
 
@@ -856,16 +1177,17 @@ function pageShell(title, body) {
       width: 100%;
       min-height: 150px;
       padding: 12px;
-      border: 1px solid #343b4d;
+      border: 1px solid var(--line);
       border-radius: 6px;
-      background: #191d27;
-      color: #f4f6fb;
+      background: rgba(16, 17, 20, 0.72);
+      color: var(--text);
       font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
       resize: vertical;
     }
 
     .note {
       font-size: 14px;
+      color: var(--muted);
     }
 
     .two {
@@ -873,7 +1195,46 @@ function pageShell(title, body) {
     }
 
     .secondary {
-      background: #343b4d;
+      background: rgba(255, 255, 255, 0.04);
+    }
+
+    .status-panel {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin: 20px 0 8px;
+    }
+
+    .status-panel div {
+      min-width: 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 12px;
+    }
+
+    .status-panel span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--dim);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .status-panel strong {
+      display: block;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font-size: 14px;
+    }
+
+    .success { color: var(--accent-1) !important; }
+    .failed { color: var(--danger) !important; }
+
+    @media (max-width: 560px) {
+      body { padding: 16px; }
+      .status-panel,
+      .two { grid-template-columns: 1fr; }
     }
   </style>
 </head>

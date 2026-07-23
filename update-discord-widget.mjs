@@ -121,8 +121,8 @@ try {
 
 async function buildWidgetData() {
   const [lists, finished, achievementCompletions, shelf, sync, activity] = await Promise.all([
-    getJson("/api/gamelist-games-by-list"),
-    getJson("/api/completed-games-by-year"),
+    maybeGetJson("/api/gamelist-games-by-list"),
+    maybeGetJson("/api/completed-games-by-year"),
     maybeGetJson("/api/achievement-completions-by-year"),
     maybeGetJson("/api/shelf-games-platforms"),
     getJson("/api/sync"),
@@ -141,7 +141,7 @@ async function buildWidgetData() {
   return {
     data: {
       dynamic: [
-        imageField("game_cover_image", squareCoverUrl(coverGame?.cover || latestCompletedCover(finished) || FALLBACK_IMAGE)),
+        imageField("game_cover_image", squareCoverUrl(coverGame?.cover || latestCompletedCover(finished, sync) || FALLBACK_IMAGE)),
         textField("game_title", "Currently Playing"),
         imageField("platform_icon_image", subtitleIcons[0]),
         imageField("game_subtitle_1_image", subtitleIcons[0]),
@@ -155,9 +155,9 @@ async function buildWidgetData() {
         textField("game_subtitle_3_trophies", subtitleTrophies[2]),
         textField("total_completed_count", achievementCompletionSummary(achievementCompletions)),
         imageField("total_completed_count_image", STAT_IMAGES.completed),
-        textField("finished_this_year", finishedThisYear(finished)),
+        textField("finished_this_year", finishedThisYear(finished, sync)),
         imageField("finished_image", STAT_IMAGES.finished),
-        textField("backlog_games", backlogCount(lists)),
+        textField("backlog_games", backlogCount(lists, sync)),
         imageField("backlog_image", STAT_IMAGES.backlog),
         textField("shelf_games", shelfCount(shelf, sync)),
         imageField("shelf_image", STAT_IMAGES.shelf),
@@ -184,9 +184,13 @@ async function maybeGetJson(path) {
 }
 
 function playingGames(syncData) {
-  return (syncData.games || [])
-    .filter((game) => !game.deletedAt && game.playing)
+  return activeGames(syncData)
+    .filter((game) => game.playing)
     .sort((a, b) => startedSortValue(a) - startedSortValue(b) || String(a.title || "").localeCompare(String(b.title || "")));
+}
+
+function activeGames(syncData) {
+  return (syncData?.games || []).filter((game) => !game.deletedAt);
 }
 
 function randomGames(games, count = games.length) {
@@ -228,8 +232,10 @@ function startedSortValue(game) {
   return game.startedAt ? new Date(`${game.startedAt}T00:00:00Z`).getTime() : Number.POSITIVE_INFINITY;
 }
 
-function backlogCount(listsData) {
-  return (listsData.lists || []).find((item) => item.list === "backlog")?.count || 0;
+function backlogCount(listsData, syncData) {
+  const listCount = (listsData?.lists || []).find((item) => item.list === "backlog")?.count;
+  if (Number.isFinite(Number(listCount))) return Number(listCount);
+  return activeGames(syncData).filter((game) => game.section === "backlog").length;
 }
 
 function shelfCount(shelfData, syncData) {
@@ -263,14 +269,21 @@ function achievementCompletionSummary(completionsData) {
   return `${achievementCompletionCount(completionsData)} (${achievementCompletionsThisYear(completionsData)} this year)`;
 }
 
-function finishedThisYear(completedData) {
+function finishedThisYear(completedData, syncData) {
   const year = String(new Date().getFullYear());
-  return (completedData.years || []).find((item) => item.year === year)?.count || 0;
+  const apiCount = (completedData?.years || []).find((item) => item.year === year)?.count;
+  if (Number.isFinite(Number(apiCount))) return Number(apiCount);
+  return activeGames(syncData).filter((game) => String(game.completedAt || "").startsWith(year)).length;
 }
 
-function latestCompletedCover(completedData) {
-  return (completedData.years || [])
+function latestCompletedCover(completedData, syncData) {
+  const apiCover = (completedData?.years || [])
     .flatMap((year) => year.games || [])
+    .find((game) => game.cover)?.cover || "";
+  if (apiCover) return apiCover;
+  return activeGames(syncData)
+    .filter((game) => game.completedAt && game.cover)
+    .sort((a, b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")))
     .find((game) => game.cover)?.cover || "";
 }
 

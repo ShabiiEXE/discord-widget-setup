@@ -46,12 +46,21 @@ export default {
       }
     }
 
+    if (url.pathname === "/health") {
+      if (!isAuthorizedRefresh(request, env)) {
+        return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
+      }
+
+      return jsonResponse(await healthCheck(env));
+    }
+
     return jsonResponse({
       ok: true,
       name: "gamelist-discord-widget",
       endpoints: [
         "/auth",
         "/guide",
+        "/health?secret=YOUR_REFRESH_SECRET",
         "/refresh?secret=YOUR_REFRESH_SECRET",
         "/widget-data?secret=YOUR_REFRESH_SECRET",
       ],
@@ -102,8 +111,8 @@ async function patchDiscordIdentity(env, widgetData) {
 
 async function buildWidgetData(env) {
   const [lists, finished, achievementCompletions, shelf, sync, activity] = await Promise.all([
-    getJson(env, "/api/gamelist-games-by-list"),
-    getJson(env, "/api/completed-games-by-year"),
+    maybeGetJson(env, "/api/gamelist-games-by-list"),
+    maybeGetJson(env, "/api/completed-games-by-year"),
     maybeGetJson(env, "/api/achievement-completions-by-year"),
     maybeGetJson(env, "/api/shelf-games-platforms"),
     getJson(env, "/api/sync"),
@@ -122,7 +131,7 @@ async function buildWidgetData(env) {
   return {
     data: {
       dynamic: [
-        imageField(env, "game_cover_image", squareCoverUrl(env, coverGame?.cover || latestCompletedCover(finished) || fallbackImage(env))),
+        imageField(env, "game_cover_image", squareCoverUrl(env, coverGame?.cover || latestCompletedCover(finished, sync) || fallbackImage(env))),
         textField("game_title", "Currently Playing"),
         imageField(env, "platform_icon_image", subtitleIcons[0]),
         imageField(env, "game_subtitle_1_image", subtitleIcons[0]),
@@ -136,9 +145,9 @@ async function buildWidgetData(env) {
         textField("game_subtitle_3_trophies", subtitleTrophies[2]),
         textField("total_completed_count", achievementCompletionSummary(env, achievementCompletions)),
         imageField(env, "total_completed_count_image", statImages(env).completed),
-        textField("finished_this_year", finishedThisYear(finished)),
+        textField("finished_this_year", finishedThisYear(finished, sync)),
         imageField(env, "finished_image", statImages(env).finished),
-        textField("backlog_games", backlogCount(lists)),
+        textField("backlog_games", backlogCount(lists, sync)),
         imageField(env, "backlog_image", statImages(env).backlog),
         textField("shelf_games", shelfCount(shelf, sync)),
         imageField(env, "shelf_image", statImages(env).shelf),
@@ -164,10 +173,52 @@ async function maybeGetJson(env, path) {
   }
 }
 
+async function healthCheck(env) {
+  const paths = [
+    "/api/gamelist-games-by-list",
+    "/api/completed-games-by-year",
+    "/api/achievement-completions-by-year",
+    "/api/shelf-games-platforms",
+    "/api/sync",
+    "/api/achievements",
+  ];
+
+  const checks = await Promise.all(paths.map(async (path) => {
+    const startedAt = Date.now();
+    try {
+      const response = await fetch(`${baseUrl(env)}${path}`, { headers: { Accept: "application/json" } });
+      return {
+        path,
+        ok: response.ok,
+        status: response.status,
+        ms: Date.now() - startedAt,
+      };
+    } catch (error) {
+      return {
+        path,
+        ok: false,
+        error: error?.message || "Request failed",
+        ms: Date.now() - startedAt,
+      };
+    }
+  }));
+
+  return {
+    ok: checks.every((check) => check.ok),
+    baseUrl: baseUrl(env),
+    checks,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
 function playingGames(syncData) {
-  return (syncData.games || [])
-    .filter((game) => !game.deletedAt && game.playing)
+  return activeGames(syncData)
+    .filter((game) => game.playing)
     .sort((a, b) => startedSortValue(a) - startedSortValue(b) || String(a.title || "").localeCompare(String(b.title || "")));
+}
+
+function activeGames(syncData) {
+  return (syncData?.games || []).filter((game) => !game.deletedAt);
 }
 
 function randomGames(games, count = games.length) {
@@ -197,8 +248,10 @@ function startedSortValue(game) {
   return game.startedAt ? new Date(`${game.startedAt}T00:00:00Z`).getTime() : Number.POSITIVE_INFINITY;
 }
 
-function backlogCount(listsData) {
-  return (listsData.lists || []).find((item) => item.list === "backlog")?.count || 0;
+function backlogCount(listsData, syncData) {
+  const listCount = (listsData?.lists || []).find((item) => item.list === "backlog")?.count;
+  if (Number.isFinite(Number(listCount))) return Number(listCount);
+  return activeGames(syncData).filter((game) => game.section === "backlog").length;
 }
 
 function shelfCount(shelfData, syncData) {
@@ -227,14 +280,21 @@ function achievementCompletionSummary(env, completionsData) {
   return `${achievementCompletionCount(env, completionsData)} (${achievementCompletionsThisYear(env, completionsData)} this year)`;
 }
 
-function finishedThisYear(completedData) {
+function finishedThisYear(completedData, syncData) {
   const year = String(new Date().getFullYear());
-  return (completedData.years || []).find((item) => item.year === year)?.count || 0;
+  const apiCount = (completedData?.years || []).find((item) => item.year === year)?.count;
+  if (Number.isFinite(Number(apiCount))) return Number(apiCount);
+  return activeGames(syncData).filter((game) => String(game.completedAt || "").startsWith(year)).length;
 }
 
-function latestCompletedCover(completedData) {
-  return (completedData.years || [])
+function latestCompletedCover(completedData, syncData) {
+  const apiCover = (completedData?.years || [])
     .flatMap((year) => year.games || [])
+    .find((game) => game.cover)?.cover || "";
+  if (apiCover) return apiCover;
+  return activeGames(syncData)
+    .filter((game) => game.completedAt && game.cover)
+    .sort((a, b) => String(b.completedAt || "").localeCompare(String(a.completedAt || "")))
     .find((game) => game.cover)?.cover || "";
 }
 

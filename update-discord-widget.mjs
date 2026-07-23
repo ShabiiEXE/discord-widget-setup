@@ -16,10 +16,6 @@ const BOT_TOKEN = cleanEnv("DISCORD_BOT_TOKEN");
 const ACCESS_TOKEN = cleanEnv("DISCORD_ACCESS_TOKEN");
 const USER_ID_OVERRIDE = cleanEnv("DISCORD_USER_ID");
 const APP_ID_OVERRIDE = cleanEnv("DISCORD_APP_ID");
-const TOTAL_COMPLETED_COUNT_OVERRIDE = cleanEnv("TOTAL_COMPLETED_COUNT");
-const TOTAL_COMPLETED_THIS_YEAR_OVERRIDE = cleanEnv("TOTAL_COMPLETED_THIS_YEAR");
-const FALLBACK_TOTAL_COMPLETED_COUNT = 41;
-const FALLBACK_TOTAL_COMPLETED_THIS_YEAR = 1;
 const FALLBACK_SYNC_DATA = {
   games: [
     {
@@ -151,7 +147,7 @@ async function buildWidgetData() {
   const [lists, finished, achievementCompletions, shelf, sync, activity] = await Promise.all([
     maybeGetJson("/api/gamelist-games-by-list"),
     maybeGetJson("/api/completed-games-by-year"),
-    maybeGetJson("/api/achievement-completions-by-year"),
+    waitForAchievementCompletions(),
     maybeGetJson("/api/shelf-games-platforms"),
     maybeGetJson("/api/sync"),
     maybeGetJson("/api/achievements"),
@@ -200,18 +196,25 @@ async function buildWidgetData() {
 
 async function getJson(path) {
   const targetUrl = `${BASE_URL}${path}`;
-  const response = await fetch(targetUrl, {
-    headers: {
-      Accept: "application/json",
-      "User-Agent": "gamelist-discord-widget/1.0",
-    },
-  });
-  if (!response.ok) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch(targetUrl, {
+      headers: {
+        Accept: "application/json",
+        "User-Agent": "gamelist-discord-widget/1.0",
+      },
+    });
+    if (response.ok) return response.json();
+
     const text = await response.text().catch(() => "");
     const excerpt = text ? `: ${text.slice(0, 200)}` : "";
-    throw new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+    lastError = new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+
+    if (attempt < 3) await sleep(attempt * 1000);
   }
-  return response.json();
+
+  throw lastError;
 }
 
 async function maybeGetJson(path) {
@@ -220,6 +223,29 @@ async function maybeGetJson(path) {
   } catch {
     return null;
   }
+}
+
+async function waitForAchievementCompletions() {
+  let best = null;
+  const requiredSources = new Set(["psn", "steam", "xbox"]);
+
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const data = await maybeGetJson("/api/achievement-completions-by-year");
+    if (data) {
+      if (!best || achievementCompletionCount(data) >= achievementCompletionCount(best)) {
+        best = data;
+      }
+
+      const hasRequiredSources = [...requiredSources].every((source) => sourceHasCompletionData(data, source));
+      const hasNoErrors = !Array.isArray(data.errors) || data.errors.length === 0;
+
+      if (hasRequiredSources && hasNoErrors && attempt >= 3) return best;
+    }
+
+    if (attempt < 8) await sleep(2000);
+  }
+
+  return best;
 }
 
 function playingGames(syncData) {
@@ -289,19 +315,20 @@ function completedCount(completedData) {
 }
 
 function achievementCompletionCount(completionsData) {
-  const override = numericOverride(TOTAL_COMPLETED_COUNT_OVERRIDE);
-  if (override != null) return override;
   const apiTotal = Number(completionsData?.totalCompletedGames || 0)
+    || (Array.isArray(completionsData?.completedGames) ? completionsData.completedGames.length : 0)
     || (completionsData?.platforms || []).reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0);
-  return Math.max(apiTotal, FALLBACK_TOTAL_COMPLETED_COUNT);
+  return apiTotal;
 }
 
 function achievementCompletionsThisYear(completionsData) {
-  const override = numericOverride(TOTAL_COMPLETED_THIS_YEAR_OVERRIDE);
-  if (override != null) return override;
   const year = String(new Date().getFullYear());
-  const apiTotal = (completionsData?.completedGamesByYear || []).find((item) => item.year === year)?.count || 0;
-  return Math.max(apiTotal, FALLBACK_TOTAL_COMPLETED_THIS_YEAR);
+  const apiTotal = (completionsData?.completedGamesByYear || []).find((item) => item.year === year)?.count;
+  if (Number.isFinite(Number(apiTotal))) return Number(apiTotal);
+  return (completionsData?.platforms || []).reduce((sum, platform) => {
+    const count = (platform.completedGamesByYear || []).find((item) => item.year === year)?.count;
+    return sum + Number(count || 0);
+  }, 0);
 }
 
 function achievementCompletionSummary(completionsData) {
@@ -427,12 +454,6 @@ function trophyCountText(earned, total) {
 
 function endpointGameTitle(data) {
   return String(data?.title || data?.name || data?.trophyTitleName || data?.gameName || "").trim();
-}
-
-function numericOverride(value) {
-  if (value === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : null;
 }
 
 function titleMatch(left, right) {
@@ -634,4 +655,16 @@ function authUrls(appId) {
     `https://discord.com/oauth2/authorize?client_id=${appId}&response_type=token&scope=openid%20sdk.social_layer_presence&prompt=consent`,
     `https://discord.com/oauth2/authorize?client_id=${appId}&response_type=token&scope=openid%20sdk.social_layer&prompt=consent`,
   ];
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sourceHasCompletionData(data, source) {
+  const platform = (data?.platforms || []).find((item) => String(item.source || "").toLowerCase() === source);
+  if (!platform) return false;
+  return Number(platform.totalCompletedGames || 0) > 0
+    || (platform.completedGames || []).length > 0
+    || (platform.completedGamesByYear || []).length > 0;
 }

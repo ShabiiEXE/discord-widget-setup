@@ -32,8 +32,6 @@ DISCORD_USER_ID="..."
 DISCORD_APP_ID="..."
 DISCORD_ACCESS_TOKEN=""
 GAMELIST_BASE_URL="https://gamelist.shabiimitjans.workers.dev"
-TOTAL_COMPLETED_COUNT="41"
-TOTAL_COMPLETED_THIS_YEAR="1"
 ```
 
 Load it in PowerShell:
@@ -80,8 +78,6 @@ Public config lives in `wrangler.toml`:
 
 ```toml
 GAMELIST_BASE_URL = "https://gamelist.shabiimitjans.workers.dev"
-TOTAL_COMPLETED_COUNT = "41"
-TOTAL_COMPLETED_THIS_YEAR = "1"
 ```
 
 The Worker calls the Gamelist Worker through a Cloudflare Service Binding:
@@ -123,6 +119,8 @@ You can also pass the secret as a bearer token:
 ```sh
 curl -H "Authorization: Bearer choose-a-long-random-value" "http://localhost:8787/refresh"
 ```
+
+The Worker root URL also shows a small control page with buttons for auth, guide, health, refresh, and widget-data preview. Enter your refresh secret there and save it; it is stored in browser local storage and appended to private URLs automatically.
 
 ## Deploy
 

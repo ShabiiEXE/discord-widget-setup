@@ -1,7 +1,5 @@
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
-const FALLBACK_TOTAL_COMPLETED_COUNT = 41;
-const FALLBACK_TOTAL_COMPLETED_THIS_YEAR = 1;
 const FALLBACK_SYNC_DATA = {
   games: [
     {
@@ -82,20 +80,7 @@ export default {
       return jsonResponse(await healthCheck(env));
     }
 
-    return jsonResponse({
-      ok: true,
-      name: "gamelist-discord-widget",
-      endpoints: [
-        "/auth",
-        "/guide",
-        "/health?secret=YOUR_REFRESH_SECRET",
-        "/refresh?secret=YOUR_REFRESH_SECRET",
-        "/widget-data?secret=YOUR_REFRESH_SECRET",
-      ],
-      auth: "Open /auth to get the Discord authorization URL.",
-      guide: "Open /guide to view the Discord widget setup guide.",
-      manualRefresh: "Open /refresh?secret=YOUR_REFRESH_SECRET to update Discord immediately.",
-    });
+    return homePage();
   },
 
   async scheduled(_event, env, ctx) {
@@ -141,7 +126,7 @@ async function buildWidgetData(env) {
   const [lists, finished, achievementCompletions, shelf, sync, activity] = await Promise.all([
     maybeGetJson(env, "/api/gamelist-games-by-list"),
     maybeGetJson(env, "/api/completed-games-by-year"),
-    maybeGetJson(env, "/api/achievement-completions-by-year"),
+    waitForAchievementCompletions(env),
     maybeGetJson(env, "/api/shelf-games-platforms"),
     maybeGetJson(env, "/api/sync"),
     maybeGetJson(env, "/api/achievements"),
@@ -190,13 +175,20 @@ async function buildWidgetData(env) {
 
 async function getJson(env, path) {
   const targetUrl = `${baseUrl(env)}${path}`;
-  const response = await fetchGamelist(env, path);
-  if (!response.ok) {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetchGamelist(env, path);
+    if (response.ok) return response.json();
+
     const text = await response.text().catch(() => "");
     const excerpt = text ? `: ${text.slice(0, 200)}` : "";
-    throw new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+    lastError = new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+
+    if (attempt < 3) await sleep(attempt * 1000);
   }
-  return response.json();
+
+  throw lastError;
 }
 
 async function maybeGetJson(env, path) {
@@ -249,6 +241,29 @@ async function healthCheck(env) {
   };
 }
 
+async function waitForAchievementCompletions(env) {
+  let best = null;
+  const requiredSources = new Set(["psn", "steam", "xbox"]);
+
+  for (let attempt = 1; attempt <= 8; attempt += 1) {
+    const data = await maybeGetJson(env, "/api/achievement-completions-by-year");
+    if (data) {
+      if (!best || achievementCompletionCount(env, data) >= achievementCompletionCount(env, best)) {
+        best = data;
+      }
+
+      const hasRequiredSources = [...requiredSources].every((source) => sourceHasCompletionData(data, source));
+      const hasNoErrors = !Array.isArray(data.errors) || data.errors.length === 0;
+
+      if (hasRequiredSources && hasNoErrors && attempt >= 3) return best;
+    }
+
+    if (attempt < 8) await sleep(2000);
+  }
+
+  return best;
+}
+
 function fetchGamelist(env, path) {
   const request = new Request(`${baseUrl(env)}${path}`, {
     headers: {
@@ -258,6 +273,18 @@ function fetchGamelist(env, path) {
   });
 
   return env.GAMELIST ? env.GAMELIST.fetch(request) : fetch(request);
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function sourceHasCompletionData(data, source) {
+  const platform = (data?.platforms || []).find((item) => String(item.source || "").toLowerCase() === source);
+  if (!platform) return false;
+  return Number(platform.totalCompletedGames || 0) > 0
+    || (platform.completedGames || []).length > 0
+    || (platform.completedGamesByYear || []).length > 0;
 }
 
 function playingGames(syncData) {
@@ -310,19 +337,20 @@ function shelfCount(shelfData, syncData) {
 }
 
 function achievementCompletionCount(env, completionsData) {
-  const override = numericOverride(env.TOTAL_COMPLETED_COUNT);
-  if (override != null) return override;
   const apiTotal = Number(completionsData?.totalCompletedGames || 0)
+    || (Array.isArray(completionsData?.completedGames) ? completionsData.completedGames.length : 0)
     || (completionsData?.platforms || []).reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0);
-  return Math.max(apiTotal, FALLBACK_TOTAL_COMPLETED_COUNT);
+  return apiTotal;
 }
 
 function achievementCompletionsThisYear(env, completionsData) {
-  const override = numericOverride(env.TOTAL_COMPLETED_THIS_YEAR);
-  if (override != null) return override;
   const year = String(new Date().getFullYear());
-  const apiTotal = (completionsData?.completedGamesByYear || []).find((item) => item.year === year)?.count || 0;
-  return Math.max(apiTotal, FALLBACK_TOTAL_COMPLETED_THIS_YEAR);
+  const apiTotal = (completionsData?.completedGamesByYear || []).find((item) => item.year === year)?.count;
+  if (Number.isFinite(Number(apiTotal))) return Number(apiTotal);
+  return (completionsData?.platforms || []).reduce((sum, platform) => {
+    const count = (platform.completedGamesByYear || []).find((item) => item.year === year)?.count;
+    return sum + Number(count || 0);
+  }, 0);
 }
 
 function achievementCompletionSummary(env, completionsData) {
@@ -449,12 +477,6 @@ function trophyCountText(earned, total) {
 
 function endpointGameTitle(data) {
   return String(data?.title || data?.name || data?.trophyTitleName || data?.gameName || "").trim();
-}
-
-function numericOverride(value) {
-  if (cleanEnv(value) === "") return null;
-  const number = Number(value);
-  return Number.isFinite(number) ? Math.max(0, Math.round(number)) : null;
 }
 
 function titleMatch(left, right) {
@@ -606,6 +628,63 @@ function assetRequest(request, pathname) {
   return new Request(url, request);
 }
 
+function homePage() {
+  return htmlResponse(pageShell("Gamelist Discord Widget", `
+    <main>
+      <h1>Gamelist Discord Widget</h1>
+      <p>Save your refresh secret locally, then use the buttons below. The secret is stored only in this browser.</p>
+
+      <label for="secret">Refresh secret</label>
+      <input id="secret" type="password" autocomplete="current-password" placeholder="YOUR_REFRESH_SECRET">
+
+      <div class="actions two">
+        <button id="save-secret" type="button">Save secret</button>
+        <button id="clear-secret" class="secondary" type="button">Clear</button>
+      </div>
+
+      <div class="actions">
+        <a class="button" href="/auth">Discord auth</a>
+        <a class="button" href="/guide">Setup guide</a>
+        <a class="button protected" data-path="/health" href="/health?secret=YOUR_REFRESH_SECRET">Health check</a>
+        <a class="button protected" data-path="/refresh" href="/refresh?secret=YOUR_REFRESH_SECRET">Refresh Discord</a>
+        <a class="button protected" data-path="/widget-data" href="/widget-data?secret=YOUR_REFRESH_SECRET">Preview widget data</a>
+      </div>
+
+      <p id="status" class="note"></p>
+    </main>
+    <script>
+      const storageKey = "gamelist-discord-widget-refresh-secret";
+      const input = document.getElementById("secret");
+      const status = document.getElementById("status");
+      const protectedLinks = [...document.querySelectorAll(".protected")];
+
+      function updateLinks() {
+        const secret = input.value.trim();
+        protectedLinks.forEach((link) => {
+          const path = link.dataset.path;
+          link.href = secret ? path + "?secret=" + encodeURIComponent(secret) : path + "?secret=YOUR_REFRESH_SECRET";
+        });
+      }
+
+      input.value = localStorage.getItem(storageKey) || "";
+      updateLinks();
+
+      input.addEventListener("input", updateLinks);
+      document.getElementById("save-secret").addEventListener("click", () => {
+        localStorage.setItem(storageKey, input.value.trim());
+        updateLinks();
+        status.textContent = "Secret saved locally.";
+      });
+      document.getElementById("clear-secret").addEventListener("click", () => {
+        localStorage.removeItem(storageKey);
+        input.value = "";
+        updateLinks();
+        status.textContent = "Secret cleared.";
+      });
+    </script>
+  `));
+}
+
 function authPage(env) {
   const appId = discordAppId(env);
   if (!appId) {
@@ -747,6 +826,18 @@ function pageShell(title, body) {
       font-weight: 700;
     }
 
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 44px;
+      padding: 10px 12px;
+      border: 1px solid #343b4d;
+      border-radius: 6px;
+      background: #191d27;
+      color: #f4f6fb;
+      font: inherit;
+    }
+
     textarea {
       box-sizing: border-box;
       width: 100%;
@@ -762,6 +853,14 @@ function pageShell(title, body) {
 
     .note {
       font-size: 14px;
+    }
+
+    .two {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .secondary {
+      background: #343b4d;
     }
   </style>
 </head>

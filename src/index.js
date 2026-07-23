@@ -134,10 +134,11 @@ async function buildWidgetData(env) {
 
   const syncData = sync || FALLBACK_SYNC_DATA;
   const playing = playingGames(syncData);
-  const coverGame = randomCoverGame(playing);
-  const selectedGames = coverGame ? gamesStartingWith(playing, coverGame, 3) : randomGames(playing, 3);
+  const selectedGames = rotatePlayingGames(playing, 3);
+  const coverGame = selectedGames.find((game) => game?.cover) || null;
   const trophyRows = sync ? await Promise.all(selectedGames.map((game) => trophyProgressForGame(env, game, activity || {}))) : [];
   const displayRows = [0, 1, 2].map((index) => gameDisplayRow(selectedGames[index], trophyRows[index]));
+  if (playing.length > 3) displayRows[2] = withAndMore(displayRows[2]);
   const subtitles = displayRows.map((row) => row.subtitle);
   const subtitleTrophies = displayRows.map((row) => row.trophies);
   const subtitleIcons = [0, 1, 2].map((index) => platformIconUrl(env, selectedGames[index]?.platform));
@@ -305,15 +306,13 @@ function randomGames(games, count = games.length) {
     .map(({ game }) => game);
 }
 
-function gamesStartingWith(games, firstGame, count) {
+function rotatePlayingGames(games, count) {
+  const candidates = games.filter((game) => game.cover);
+  const firstGame = randomGames(candidates.length ? candidates : games, 1)[0];
+  if (!firstGame) return [];
   const firstKey = coverKey(firstGame);
   const rest = games.filter((game) => coverKey(game) !== firstKey);
   return [firstGame, ...randomGames(rest, count - 1)].slice(0, count);
-}
-
-function randomCoverGame(games) {
-  const candidates = games.filter((game) => game.cover);
-  return randomGames(candidates, 1)[0] || null;
 }
 
 function coverKey(game) {
@@ -418,6 +417,19 @@ function gameDisplayRow(game, trophyRow = {}) {
     subtitle: "",
     trophies: endpointTitle || game.title || " ",
   };
+}
+
+function withAndMore(row) {
+  if (!row) return { subtitle: " ", trophies: "AND MORE" };
+  const next = { ...row };
+  const target = next.trophies && next.trophies.trim() ? "trophies" : "subtitle";
+  next[target] = appendAndMore(next[target]);
+  return next;
+}
+
+function appendAndMore(value) {
+  const text = String(value || "").trim();
+  return text ? `${text} AND MORE` : "AND MORE";
 }
 
 async function trophyProgressForGame(env, game, activityData) {

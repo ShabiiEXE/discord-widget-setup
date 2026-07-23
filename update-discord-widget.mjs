@@ -1,6 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { writeFile } from "node:fs/promises";
 
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
@@ -45,8 +43,6 @@ const FALLBACK_SYNC_DATA = {
   ],
 };
 const DRY_RUN = process.argv.includes("--dry-run");
-const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
-const COVER_STATE_PATH = join(SCRIPT_DIR, ".discord-widget-cover-state.json");
 const FALLBACK_IMAGE = `${BASE_URL}/assets/Icon.png`;
 const STAT_IMAGES = {
   completed: `${BASE_URL}/assets/discord/completed_games.png`,
@@ -155,10 +151,11 @@ async function buildWidgetData() {
 
   const syncData = sync || FALLBACK_SYNC_DATA;
   const playing = playingGames(syncData);
-  const coverGame = await randomCoverGame(playing);
-  const selectedGames = coverGame ? gamesStartingWith(playing, coverGame, 3) : randomGames(playing, 3);
+  const selectedGames = rotatePlayingGames(playing, 3);
+  const coverGame = selectedGames.find((game) => game?.cover) || null;
   const trophyRows = sync ? await Promise.all(selectedGames.map((game) => trophyProgressForGame(game, activity || {}))) : [];
   const displayRows = [0, 1, 2].map((index) => gameDisplayRow(selectedGames[index], trophyRows[index]));
+  if (playing.length > 3) displayRows[2] = withAndMore(displayRows[2]);
   const subtitles = displayRows.map((row) => row.subtitle);
   const subtitleTrophies = displayRows.map((row) => row.trophies);
   const subtitleIcons = [0, 1, 2].map((index) => platformIconUrl(selectedGames[index]?.platform));
@@ -266,27 +263,13 @@ function randomGames(games, count = games.length) {
     .map(({ game }) => game);
 }
 
-function gamesStartingWith(games, firstGame, count) {
+function rotatePlayingGames(games, count) {
+  const candidates = games.filter((game) => game.cover);
+  const firstGame = randomGames(candidates.length ? candidates : games, 1)[0];
+  if (!firstGame) return [];
   const firstKey = coverKey(firstGame);
   const rest = games.filter((game) => coverKey(game) !== firstKey);
   return [firstGame, ...randomGames(rest, count - 1)].slice(0, count);
-}
-
-async function randomCoverGame(games) {
-  const candidates = games.filter((game) => game.cover);
-  if (!candidates.length) return null;
-  let previousKey = "";
-  try {
-    previousKey = JSON.parse(await readFile(COVER_STATE_PATH, "utf8"))?.key || "";
-  } catch {
-    previousKey = "";
-  }
-  const available = candidates.length > 1
-    ? candidates.filter((game) => coverKey(game) !== previousKey)
-    : candidates;
-  const selected = randomGames(available, 1)[0] || candidates[0];
-  await writeFile(COVER_STATE_PATH, JSON.stringify({ key: coverKey(selected), updatedAt: new Date().toISOString() }, null, 2), "utf8").catch(() => {});
-  return selected;
 }
 
 function coverKey(game) {
@@ -395,6 +378,19 @@ function gameDisplayRow(game, trophyRow = {}) {
     subtitle: "",
     trophies: endpointTitle || game.title || " ",
   };
+}
+
+function withAndMore(row) {
+  if (!row) return { subtitle: " ", trophies: "AND MORE" };
+  const next = { ...row };
+  const target = next.trophies && next.trophies.trim() ? "trophies" : "subtitle";
+  next[target] = appendAndMore(next[target]);
+  return next;
+}
+
+function appendAndMore(value) {
+  const text = String(value || "").trim();
+  return text ? `${text} AND MORE` : "AND MORE";
 }
 
 async function trophyProgressForGame(game, activityData) {

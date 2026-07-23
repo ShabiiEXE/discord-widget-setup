@@ -7,6 +7,18 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    if (url.pathname === "/auth") {
+      return authPage(env);
+    }
+
+    if (url.pathname === "/auth/redirect") {
+      return authRedirectPage();
+    }
+
+    if (url.pathname === "/guide" || url.pathname === "/discord-widget-guide.html") {
+      return env.ASSETS.fetch(assetRequest(request, "/discord-widget-guide.html"));
+    }
+
     if (url.pathname === "/refresh") {
       if (!isAuthorizedRefresh(request, env)) {
         return jsonResponse({ ok: false, error: "Unauthorized" }, 401);
@@ -37,7 +49,15 @@ export default {
     return jsonResponse({
       ok: true,
       name: "gamelist-discord-widget",
-      endpoints: ["/refresh", "/widget-data"],
+      endpoints: [
+        "/auth",
+        "/guide",
+        "/refresh?secret=YOUR_REFRESH_SECRET",
+        "/widget-data?secret=YOUR_REFRESH_SECRET",
+      ],
+      auth: "Open /auth to get the Discord authorization URL.",
+      guide: "Open /guide to view the Discord widget setup guide.",
+      manualRefresh: "Open /refresh?secret=YOUR_REFRESH_SECRET to update Discord immediately.",
     });
   },
 
@@ -65,7 +85,7 @@ async function updateDiscordWidget(env, source) {
 }
 
 async function patchDiscordIdentity(env, widgetData) {
-  const path = `/v9/applications/${cleanEnv(env.DISCORD_APP_ID)}/users/${cleanEnv(env.DISCORD_USER_ID)}/identities/0/profile`;
+  const path = `/v9/applications/${discordAppId(env)}/users/${cleanEnv(env.DISCORD_USER_ID)}/identities/0/profile`;
 
   try {
     return await discordJson(env, "PATCH", path, widgetData);
@@ -453,6 +473,197 @@ function jsonResponse(payload, status = 200) {
   });
 }
 
+function htmlResponse(html, status = 200) {
+  return new Response(html, {
+    status,
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+function assetRequest(request, pathname) {
+  const url = new URL(request.url);
+  url.pathname = pathname;
+  url.search = "";
+  url.hash = "";
+  return new Request(url, request);
+}
+
+function authPage(env) {
+  const appId = discordAppId(env);
+  if (!appId) {
+    return htmlResponse(pageShell("Discord Auth", `
+      <main>
+        <h1>Missing Discord App ID</h1>
+        <p>Set <code>DISCORD_APP_ID</code> as a Worker secret, redeploy, then open this page again.</p>
+      </main>
+    `), 500);
+  }
+
+  const links = authUrls(appId).map((url, index) => `
+    <a class="button" href="${escapeHtml(url)}">Authorize option ${index + 1}</a>
+  `).join("");
+
+  return htmlResponse(pageShell("Discord Auth", `
+    <main>
+      <h1>Discord Auth</h1>
+      <p>Open these while logged into the Discord account from <code>DISCORD_USER_ID</code>. Start with option 1.</p>
+      <div class="actions">${links}</div>
+      <p class="note">If Discord redirects with an <code>access_token</code> in the URL, copy it and save it as the <code>DISCORD_ACCESS_TOKEN</code> Worker secret.</p>
+    </main>
+  `));
+}
+
+function authRedirectPage() {
+  return htmlResponse(pageShell("Discord Auth Redirect", `
+    <main>
+      <h1>Discord Auth Result</h1>
+      <p>If Discord returned an access token, it will appear below.</p>
+      <label for="token">Access token</label>
+      <textarea id="token" readonly></textarea>
+      <button id="copy" type="button">Copy token</button>
+      <p class="note">Then run <code>wrangler secret put DISCORD_ACCESS_TOKEN</code>, paste the token, deploy again, and trigger <code>/refresh</code>.</p>
+    </main>
+    <script>
+      const params = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+      const token = params.get("access_token") || "";
+      const textarea = document.getElementById("token");
+      textarea.value = token || "No access_token found in the redirect URL.";
+      document.getElementById("copy").addEventListener("click", async () => {
+        if (!token) return;
+        await navigator.clipboard.writeText(token);
+        document.getElementById("copy").textContent = "Copied";
+      });
+    </script>
+  `));
+}
+
+function authUrls(appId) {
+  const common = new URLSearchParams({
+    client_id: appId,
+    response_type: "token",
+    prompt: "consent",
+  });
+
+  return [
+    ["sdk.social_layer_presence", common],
+    ["openid sdk.social_layer_presence", common],
+    ["openid sdk.social_layer", common],
+  ].map(([scope, params]) => {
+    const next = new URLSearchParams(params);
+    next.set("scope", scope);
+    return `https://discord.com/oauth2/authorize?${next}`;
+  });
+}
+
+function pageShell(title, body) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(title)}</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #111318;
+      color: #f4f6fb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+
+    main {
+      width: min(620px, 100%);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: 32px;
+      line-height: 1.1;
+      letter-spacing: 0;
+    }
+
+    p {
+      color: #c8cedc;
+      line-height: 1.55;
+    }
+
+    code {
+      color: #ffffff;
+      background: #242936;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+
+    .actions {
+      display: grid;
+      gap: 10px;
+      margin: 24px 0;
+    }
+
+    .button,
+    button {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 44px;
+      border: 0;
+      border-radius: 6px;
+      background: #5865f2;
+      color: #ffffff;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    label {
+      display: block;
+      margin: 20px 0 8px;
+      font-weight: 700;
+    }
+
+    textarea {
+      box-sizing: border-box;
+      width: 100%;
+      min-height: 150px;
+      padding: 12px;
+      border: 1px solid #343b4d;
+      border-radius: 6px;
+      background: #191d27;
+      color: #f4f6fb;
+      font: 14px ui-monospace, SFMono-Regular, Consolas, monospace;
+      resize: vertical;
+    }
+
+    .note {
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+${body}
+</body>
+</html>`;
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
 function errorPayload(error) {
   return {
     ok: false,
@@ -464,6 +675,10 @@ function errorPayload(error) {
 
 function cleanEnv(value) {
   return String(value || "").trim().replace(/^["']|["']$/g, "");
+}
+
+function discordAppId(env) {
+  return cleanEnv(env.DISCORD_APP_ID);
 }
 
 function baseUrl(env) {

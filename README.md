@@ -52,6 +52,18 @@ Print the Discord authorization URLs:
 npm run discord:auth
 ```
 
+Or open the deployed Worker auth page:
+
+```text
+https://your-worker-url/auth
+```
+
+The Discord widget setup guide is available from the deployed Worker too:
+
+```text
+https://your-worker-url/guide
+```
+
 Open the URLs while logged into the Discord account from `DISCORD_USER_ID`. If Discord redirects with an `access_token` in the URL, add it to `.env` as `DISCORD_ACCESS_TOKEN`, reload `.env`, then run:
 
 ```sh

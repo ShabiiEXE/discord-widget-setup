@@ -1,0 +1,11 @@
+name = "gamelist-discord-widget"
+main = "src/index.js"
+compatibility_date = "2026-07-23"
+
+[triggers]
+crons = ["*/30 * * * *"]
+
+[vars]
+GAMELIST_BASE_URL = "https://gamelist.shabiimitjans.workers.dev"
+TOTAL_COMPLETED_COUNT = "41"
+TOTAL_COMPLETED_THIS_YEAR = "1"

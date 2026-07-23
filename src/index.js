@@ -872,10 +872,12 @@ function homePage() {
       </div>
 
       <div class="actions">
-        <a class="button" href="/auth">Discord auth</a>
         <a class="button" href="/guide">Setup guide</a>
+        <a class="button" href="/auth">Discord auth</a>
+      </div>
+
+      <div class="actions two">
         <a class="button protected" data-path="/health" href="/health?secret=YOUR_REFRESH_SECRET">Health check</a>
-        <a class="button protected" data-path="/refresh" href="/refresh?secret=YOUR_REFRESH_SECRET">Refresh Discord</a>
         <a class="button protected" data-path="/widget-data" href="/widget-data?secret=YOUR_REFRESH_SECRET">Preview widget data</a>
       </div>
 
@@ -897,6 +899,10 @@ function homePage() {
           <strong id="last-result">Unknown</strong>
         </div>
       </section>
+
+      <div class="actions">
+        <a class="button danger-action protected" data-path="/refresh" href="/refresh?secret=YOUR_REFRESH_SECRET">Refresh Discord</a>
+      </div>
 
       <p id="status" class="note"></p>
     </main>
@@ -1196,6 +1202,12 @@ function pageShell(title, body) {
 
     .secondary {
       background: rgba(255, 255, 255, 0.04);
+    }
+
+    .danger-action {
+      border-color: color-mix(in srgb, var(--accent) 64%, transparent);
+      background: color-mix(in srgb, var(--accent) 38%, transparent);
+      color: #ffffff;
     }
 
     .status-panel {

@@ -326,7 +326,24 @@
           <span class="num">2</span>
           <div>
             <strong>Open the Console tab</strong>
-            <p>Use the experiment override code from Chloe's guide. Paste it only on the Discord Developer Portal page.</p>
+            <p>Paste this experiment override code only on the Discord Developer Portal page.</p>
+            <pre><code>let _mods = webpackChunkdiscord_developers.push([[Symbol()],{},r=&gt;r.c]);
+webpackChunkdiscord_developers.pop();
+
+let findByProps = (...props) =&gt; {
+    for (let m of Object.values(_mods)) {
+        try {
+            if (!m.exports || m.exports === window) continue;
+            if (props.every((x) =&gt; m.exports?.[x])) return m.exports;
+
+            for (let ex in m.exports) {
+                if (props.every((x) =&gt; m.exports?.[ex]?.[x]) &amp;&amp; m.exports[ex][Symbol.toStringTag] !== 'IntlMessagesProxy') return m.exports[ex];
+            }
+        } catch {}
+    }
+}
+
+findByProps("getAll").getAll().find(e=&gt;e.getName() === "ApexExperimentStore").createOverride("2026-03-widget-config-editor", 1)</code></pre>
             <span class="watch">If Discord asks you to type <code>allow pasting</code>, type that first, then paste the code again.</span>
           </div>
         </div>
@@ -454,6 +471,21 @@ node .\update-discord-widget.mjs --dry-run</code></pre>
 https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&amp;response_type=token&amp;scope=openid%20sdk.social_layer_presence&amp;prompt=consent
 https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&amp;response_type=token&amp;scope=openid%20sdk.social_layer&amp;prompt=consent</code></pre>
         <p>Chloe's app shows the first URL when Discord returns error <code>50025</code>. Discord's Social SDK docs list <code>openid</code> with <code>sdk.social_layer_presence</code> as the default presence scopes, so the updater prints both versions. You usually also need the Social SDK form completed in the Developer Portal.</p>
+        <h3>Add the widget to your profile</h3>
+        <p>Open Discord in the browser, open the Console tab, replace <code>APPLICATION_ID</code>, and run this once.</p>
+        <pre><code>let _mods=webpackChunkdiscord_app.push([[Symbol()],{},e=&gt;e.c]);webpackChunkdiscord_app.pop();
+let findByProps=(...e)=&gt;{for(let t of Object.values(_mods))try{if(!t.exports||t.exports===window)continue;if(e.every(e=&gt;t.exports?.[e]))return t.exports;for(let r in t.exports)if(e.every(e=&gt;t.exports?.[r]?.[e])&amp;&amp;"IntlMessagesProxy"!==t.exports[r][Symbol.toStringTag])return t.exports[r]}catch{}};
+
+api = findByProps("Bo", "Cu").Bo
+async function addWidget(appId) {
+    id = findByProps("getCurrentUser").getCurrentUser().id;
+    current_widgets = (await api.get("/users/" + id + "/profile")).body.widgets
+    if (current_widgets.map(x=&gt;x.data?.application_id).includes(appId)) {return console.log("Already in your widgets - remove it via Discord client to re-add")}
+    current_widgets.unshift({"data": {"type": "application","application_id": appId}})
+    await api.put({url: "/users/@me/widgets",body:{widgets: current_widgets}})
+}
+// Usage
+addWidget("APPLICATION_ID")</code></pre>
         <p>Paste this into PowerShell after replacing the placeholders:</p>
         <pre><code>$appId = "YOUR_APPLICATION_ID"
 $userId = "YOUR_DISCORD_USER_ID"

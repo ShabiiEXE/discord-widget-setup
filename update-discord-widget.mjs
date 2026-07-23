@@ -20,6 +20,34 @@ const TOTAL_COMPLETED_COUNT_OVERRIDE = cleanEnv("TOTAL_COMPLETED_COUNT");
 const TOTAL_COMPLETED_THIS_YEAR_OVERRIDE = cleanEnv("TOTAL_COMPLETED_THIS_YEAR");
 const FALLBACK_TOTAL_COMPLETED_COUNT = 41;
 const FALLBACK_TOTAL_COMPLETED_THIS_YEAR = 1;
+const FALLBACK_SYNC_DATA = {
+  games: [
+    {
+      title: "Baldur's Gate III",
+      platform: "PS5",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-01",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big/co670h.jpg",
+    },
+    {
+      title: "Digimon Story: Time Stranger",
+      platform: "Switch 2",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-11",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big_2x/coakzr.jpg",
+    },
+    {
+      title: "Hi-Fi Rush",
+      platform: "PS5",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-21",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big_2x/co6219.jpg",
+    },
+  ],
+};
 const DRY_RUN = process.argv.includes("--dry-run");
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const COVER_STATE_PATH = join(SCRIPT_DIR, ".discord-widget-cover-state.json");
@@ -125,14 +153,15 @@ async function buildWidgetData() {
     maybeGetJson("/api/completed-games-by-year"),
     maybeGetJson("/api/achievement-completions-by-year"),
     maybeGetJson("/api/shelf-games-platforms"),
-    getJson("/api/sync"),
+    maybeGetJson("/api/sync"),
     maybeGetJson("/api/achievements"),
   ]);
 
-  const playing = playingGames(sync);
+  const syncData = sync || FALLBACK_SYNC_DATA;
+  const playing = playingGames(syncData);
   const coverGame = await randomCoverGame(playing);
   const selectedGames = coverGame ? gamesStartingWith(playing, coverGame, 3) : randomGames(playing, 3);
-  const trophyRows = await Promise.all(selectedGames.map((game) => trophyProgressForGame(game, activity || {})));
+  const trophyRows = sync ? await Promise.all(selectedGames.map((game) => trophyProgressForGame(game, activity || {}))) : [];
   const displayRows = [0, 1, 2].map((index) => gameDisplayRow(selectedGames[index], trophyRows[index]));
   const subtitles = displayRows.map((row) => row.subtitle);
   const subtitleTrophies = displayRows.map((row) => row.trophies);
@@ -141,7 +170,7 @@ async function buildWidgetData() {
   return {
     data: {
       dynamic: [
-        imageField("game_cover_image", squareCoverUrl(coverGame?.cover || latestCompletedCover(finished, sync) || FALLBACK_IMAGE)),
+        imageField("game_cover_image", squareCoverUrl(coverGame?.cover || latestCompletedCover(finished, syncData) || FALLBACK_IMAGE)),
         textField("game_title", "Currently Playing"),
         imageField("platform_icon_image", subtitleIcons[0]),
         imageField("game_subtitle_1_image", subtitleIcons[0]),
@@ -155,14 +184,14 @@ async function buildWidgetData() {
         textField("game_subtitle_3_trophies", subtitleTrophies[2]),
         textField("total_completed_count", achievementCompletionSummary(achievementCompletions)),
         imageField("total_completed_count_image", STAT_IMAGES.completed),
-        textField("finished_this_year", finishedThisYear(finished, sync)),
+        textField("finished_this_year", finishedThisYear(finished, syncData)),
         imageField("finished_image", STAT_IMAGES.finished),
-        textField("backlog_games", backlogCount(lists, sync)),
+        textField("backlog_games", backlogCount(lists, syncData)),
         imageField("backlog_image", STAT_IMAGES.backlog),
-        textField("shelf_games", shelfCount(shelf, sync)),
+        textField("shelf_games", shelfCount(shelf, syncData)),
         imageField("shelf_image", STAT_IMAGES.shelf),
         numberField("completed_games", achievementCompletionCount(achievementCompletions)),
-        textField("rotation_note", playing.length > 1 ? `Randomized from ${playing.length} games on each update` : ""),
+        textField("rotation_note", sync ? (playing.length > 1 ? `Randomized from ${playing.length} games on each update` : "") : "Using fallback data"),
       ],
     },
     username: "Shabii",
@@ -170,8 +199,18 @@ async function buildWidgetData() {
 }
 
 async function getJson(path) {
-  const response = await fetch(`${BASE_URL}${path}`, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`${BASE_URL}${path} returned ${response.status}`);
+  const targetUrl = `${BASE_URL}${path}`;
+  const response = await fetch(targetUrl, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "gamelist-discord-widget/1.0",
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    const excerpt = text ? `: ${text.slice(0, 200)}` : "";
+    throw new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+  }
   return response.json();
 }
 

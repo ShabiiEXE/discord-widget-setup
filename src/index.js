@@ -2,6 +2,34 @@ const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
 const FALLBACK_TOTAL_COMPLETED_COUNT = 41;
 const FALLBACK_TOTAL_COMPLETED_THIS_YEAR = 1;
+const FALLBACK_SYNC_DATA = {
+  games: [
+    {
+      title: "Baldur's Gate III",
+      platform: "PS5",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-01",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big/co670h.jpg",
+    },
+    {
+      title: "Digimon Story: Time Stranger",
+      platform: "Switch 2",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-11",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big_2x/coakzr.jpg",
+    },
+    {
+      title: "Hi-Fi Rush",
+      platform: "PS5",
+      section: "backlog",
+      playing: true,
+      startedAt: "2026-07-21",
+      cover: "https://images.igdb.com/igdb/image/upload/t_cover_big_2x/co6219.jpg",
+    },
+  ],
+};
 
 export default {
   async fetch(request, env) {
@@ -115,14 +143,15 @@ async function buildWidgetData(env) {
     maybeGetJson(env, "/api/completed-games-by-year"),
     maybeGetJson(env, "/api/achievement-completions-by-year"),
     maybeGetJson(env, "/api/shelf-games-platforms"),
-    getJson(env, "/api/sync"),
+    maybeGetJson(env, "/api/sync"),
     maybeGetJson(env, "/api/achievements"),
   ]);
 
-  const playing = playingGames(sync);
+  const syncData = sync || FALLBACK_SYNC_DATA;
+  const playing = playingGames(syncData);
   const coverGame = randomCoverGame(playing);
   const selectedGames = coverGame ? gamesStartingWith(playing, coverGame, 3) : randomGames(playing, 3);
-  const trophyRows = await Promise.all(selectedGames.map((game) => trophyProgressForGame(env, game, activity || {})));
+  const trophyRows = sync ? await Promise.all(selectedGames.map((game) => trophyProgressForGame(env, game, activity || {}))) : [];
   const displayRows = [0, 1, 2].map((index) => gameDisplayRow(selectedGames[index], trophyRows[index]));
   const subtitles = displayRows.map((row) => row.subtitle);
   const subtitleTrophies = displayRows.map((row) => row.trophies);
@@ -131,7 +160,7 @@ async function buildWidgetData(env) {
   return {
     data: {
       dynamic: [
-        imageField(env, "game_cover_image", squareCoverUrl(env, coverGame?.cover || latestCompletedCover(finished, sync) || fallbackImage(env))),
+        imageField(env, "game_cover_image", squareCoverUrl(env, coverGame?.cover || latestCompletedCover(finished, syncData) || fallbackImage(env))),
         textField("game_title", "Currently Playing"),
         imageField(env, "platform_icon_image", subtitleIcons[0]),
         imageField(env, "game_subtitle_1_image", subtitleIcons[0]),
@@ -145,14 +174,14 @@ async function buildWidgetData(env) {
         textField("game_subtitle_3_trophies", subtitleTrophies[2]),
         textField("total_completed_count", achievementCompletionSummary(env, achievementCompletions)),
         imageField(env, "total_completed_count_image", statImages(env).completed),
-        textField("finished_this_year", finishedThisYear(finished, sync)),
+        textField("finished_this_year", finishedThisYear(finished, syncData)),
         imageField(env, "finished_image", statImages(env).finished),
-        textField("backlog_games", backlogCount(lists, sync)),
+        textField("backlog_games", backlogCount(lists, syncData)),
         imageField(env, "backlog_image", statImages(env).backlog),
-        textField("shelf_games", shelfCount(shelf, sync)),
+        textField("shelf_games", shelfCount(shelf, syncData)),
         imageField(env, "shelf_image", statImages(env).shelf),
         numberField("completed_games", achievementCompletionCount(env, achievementCompletions)),
-        textField("rotation_note", playing.length > 1 ? `Randomized from ${playing.length} games on each update` : ""),
+        textField("rotation_note", sync ? (playing.length > 1 ? `Randomized from ${playing.length} games on each update` : "") : "Using fallback data"),
       ],
     },
     username: cleanEnv(env.DISCORD_WIDGET_USERNAME) || "Shabii",
@@ -160,8 +189,18 @@ async function buildWidgetData(env) {
 }
 
 async function getJson(env, path) {
-  const response = await fetch(`${baseUrl(env)}${path}`, { headers: { Accept: "application/json" } });
-  if (!response.ok) throw new Error(`${baseUrl(env)}${path} returned ${response.status}`);
+  const targetUrl = `${baseUrl(env)}${path}`;
+  const response = await fetch(targetUrl, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "gamelist-discord-widget/1.0",
+    },
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    const excerpt = text ? `: ${text.slice(0, 200)}` : "";
+    throw new Error(`${targetUrl} returned ${response.status}${excerpt}`);
+  }
   return response.json();
 }
 
@@ -186,11 +225,18 @@ async function healthCheck(env) {
   const checks = await Promise.all(paths.map(async (path) => {
     const startedAt = Date.now();
     try {
-      const response = await fetch(`${baseUrl(env)}${path}`, { headers: { Accept: "application/json" } });
+      const response = await fetch(`${baseUrl(env)}${path}`, {
+        headers: {
+          Accept: "application/json",
+          "User-Agent": "gamelist-discord-widget/1.0",
+        },
+      });
+      const body = response.ok ? "" : await response.text().catch(() => "");
       return {
         path,
         ok: response.ok,
         status: response.status,
+        body: body.slice(0, 200),
         ms: Date.now() - startedAt,
       };
     } catch (error) {

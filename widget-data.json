@@ -1,0 +1,135 @@
+{
+  "data": {
+    "dynamic": [
+      {
+        "name": "game_cover_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/api/cover?width=152&height=152&fit=cover&src=https%3A%2F%2Fimages.igdb.com%2Figdb%2Fimage%2Fupload%2Ft_cover_big%2Fco670h.jpg"
+        }
+      },
+      {
+        "name": "game_title",
+        "type": 1,
+        "value": "Currently Playing"
+      },
+      {
+        "name": "platform_icon_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+        }
+      },
+      {
+        "name": "game_subtitle_1_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+        }
+      },
+      {
+        "name": "game_subtitle_1",
+        "type": 1,
+        "value": "Baldur's Gate III"
+      },
+      {
+        "name": "game_subtitle_1_trophies",
+        "type": 1,
+        "value": "12/55 trophies⠀"
+      },
+      {
+        "name": "game_subtitle_2_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/switch.png"
+        }
+      },
+      {
+        "name": "game_subtitle_2",
+        "type": 1,
+        "value": ""
+      },
+      {
+        "name": "game_subtitle_2_trophies",
+        "type": 1,
+        "value": "Digimon Story: Time Stranger"
+      },
+      {
+        "name": "game_subtitle_3_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+        }
+      },
+      {
+        "name": "game_subtitle_3",
+        "type": 1,
+        "value": "Hi-Fi Rush"
+      },
+      {
+        "name": "game_subtitle_3_trophies",
+        "type": 1,
+        "value": "11/72 trophies⠀"
+      },
+      {
+        "name": "total_completed_count",
+        "type": 1,
+        "value": "41 (1 this year)"
+      },
+      {
+        "name": "total_completed_count_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/completed_games.png"
+        }
+      },
+      {
+        "name": "finished_this_year",
+        "type": 1,
+        "value": "14"
+      },
+      {
+        "name": "finished_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/finished_games.png"
+        }
+      },
+      {
+        "name": "backlog_games",
+        "type": 1,
+        "value": "47"
+      },
+      {
+        "name": "backlog_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/app-Icon.png"
+        }
+      },
+      {
+        "name": "shelf_games",
+        "type": 1,
+        "value": "292"
+      },
+      {
+        "name": "shelf_image",
+        "type": 3,
+        "value": {
+          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/shelf.png"
+        }
+      },
+      {
+        "name": "completed_games",
+        "type": 2,
+        "value": 41
+      },
+      {
+        "name": "rotation_note",
+        "type": 1,
+        "value": "Randomized from 3 games on each update"
+      }
+    ]
+  },
+  "username": "Shabii"
+}

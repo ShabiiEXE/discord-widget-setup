@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Discord Gamelist Widget Guide</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #101114;
+      --card: #181b21;
+      --card2: #222733;
+      --text: #f5f7fb;
+      --muted: #b9c0cf;
+      --line: #343b4d;
+      --blue: #8aa4ff;
+      --green: #77e3bb;
+      --yellow: #ffd166;
+      --red: #ff8a9a;
+      --code: #0b0d11;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at top left, rgba(138, 164, 255, 0.22), transparent 34rem),
+        linear-gradient(180deg, #11141a, #0d0f13 42rem);
+      color: var(--text);
+      line-height: 1.55;
+    }
+
+    a { color: var(--green); }
+    code { font-family: "Cascadia Code", Consolas, monospace; color: #dce6ff; }
+
+    .wrap {
+      max-width: 1060px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+
+    header {
+      padding: 46px 0 26px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      max-width: 780px;
+      font-size: clamp(36px, 6vw, 64px);
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin: 0 0 14px;
+      font-size: 26px;
+    }
+
+    h3 {
+      margin: 22px 0 8px;
+      font-size: 18px;
+    }
+
+    p {
+      margin: 0 0 12px;
+      color: var(--muted);
+      max-width: 760px;
+    }
+
+    main { padding: 26px 0 70px; }
+
+    .quick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+
+    .quick span {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 999px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+
+    .card {
+      margin: 16px 0;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(24, 27, 33, 0.94);
+      padding: 20px;
+    }
+
+    .two {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .mini {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card2);
+      padding: 14px;
+    }
+
+    .mini strong {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--text);
+    }
+
+    .step {
+      display: grid;
+      grid-template-columns: 44px 1fr;
+      gap: 14px;
+      padding: 16px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .step:first-of-type {
+      border-top: 0;
+      padding-top: 0;
+    }
+
+    .num {
+      display: grid;
+      place-items: center;
+      width: 38px;
+      height: 38px;
+      border-radius: 8px;
+      background: var(--blue);
+      color: #080a10;
+      font-weight: 900;
+    }
+
+    .do {
+      display: inline-block;
+      margin: 8px 0 0;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: rgba(119, 227, 187, 0.12);
+      border: 1px solid rgba(119, 227, 187, 0.35);
+      color: var(--text);
+      font-weight: 700;
+    }
+
+    .watch {
+      display: inline-block;
+      margin: 8px 0 0;
+      padding: 7px 10px;
+      border-radius: 8px;
+      background: rgba(255, 209, 102, 0.10);
+      border: 1px solid rgba(255, 209, 102, 0.35);
+      color: var(--text);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      font-size: 14px;
+    }
+
+    th, td {
+      padding: 11px 12px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--card2);
+      color: var(--text);
+    }
+
+    tr:last-child td { border-bottom: 0; }
+
+    pre {
+      margin: 12px 0 0;
+      padding: 16px;
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--code);
+      color: #dce6ff;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .endpoint {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .endpoint div {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--card2);
+      padding: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .note, .danger {
+      border-radius: 8px;
+      padding: 14px 16px;
+      margin-top: 12px;
+    }
+
+    .note {
+      border-left: 4px solid var(--yellow);
+      background: rgba(255, 209, 102, 0.08);
+    }
+
+    .danger {
+      border-left: 4px solid var(--red);
+      background: rgba(255, 138, 154, 0.08);
+    }
+
+    .checklist label {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      padding: 10px 0;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .checklist label:first-child { border-top: 0; }
+    .checklist input { margin-top: 5px; }
+
+    @media (max-width: 820px) {
+      .two { grid-template-columns: 1fr; }
+      header { padding-top: 32px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Discord Gamelist Widget, Step By Step</h1>
+      <p>This is the plain-English version. Follow it in order and you will end up with a Discord profile widget that shows your current game and collection stats.</p>
+      <div class="quick">
+        <span>Game cover</span>
+        <span>Currently Playing title</span>
+        <span>Random game cover</span>
+        <span>Three game rows</span>
+        <span>Platform icons per row</span>
+        <span>Trophy counts</span>
+        <span>Collection slots</span>
+        <span>Slot images</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <section class="card">
+        <h2>Before You Start</h2>
+        <div class="two">
+          <div class="mini">
+            <strong>You need</strong>
+            <p>A Discord account, access to the Discord Developer Portal, your Gamelist site URL, and a little patience. Discord widgets are still experimental.</p>
+          </div>
+          <div class="mini">
+            <strong>You already have</strong>
+            <p>Gamelist API routes for current games, completion stats, backlog, Shelf games, and trophy/achievement progress. The included script turns those into Discord widget data.</p>
+          </div>
+        </div>
+        <p>Original reference guide: <a href="https://chloecinders.com/blog/discord-widgets" target="_blank" rel="noreferrer">Chloe Cinders' Discord widget guide</a>.</p>
+        <div class="danger">Do not paste Discord bot tokens, Cloudflare secrets, or personal auth tokens into chat, GitHub, or public files.</div>
+      </section>
+
+      <section class="card">
+        <h2>Part 1: Make The Discord App</h2>
+        <div class="step">
+          <span class="num">1</span>
+          <div>
+            <strong>Open the Developer Portal</strong>
+            <p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noreferrer">discord.com/developers/applications</a>.</p>
+            <span class="do">Click: New Application</span>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div>
+            <strong>Name the app</strong>
+            <p>This name appears on the widget, so use something nice like <code>Shabii's Gamelist</code>.</p>
+            <span class="do">Click: Create</span>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div>
+            <strong>Enable Social SDK</strong>
+            <p>Inside your app, look at the sidebar. Go to <code>Games</code>, then <code>Social SDK</code>. Fill the form Discord asks for.</p>
+            <span class="watch">If you skip this, the widget data scope may not work.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Part 2: Show The Hidden Widget Editor</h2>
+        <div class="step">
+          <span class="num">1</span>
+          <div>
+            <strong>Stay in the Discord Developer Portal</strong>
+            <p>Open browser developer tools with <code>F12</code> or <code>Ctrl+Shift+I</code>.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div>
+            <strong>Open the Console tab</strong>
+            <p>Use the experiment override code from Chloe's guide. Paste it only on the Discord Developer Portal page.</p>
+            <span class="watch">If Discord asks you to type <code>allow pasting</code>, type that first, then paste the code again.</span>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div>
+            <strong>Find the Widget menu</strong>
+            <p>After the override works, go back into your app. You should see <code>Games > Widget</code>.</p>
+            <span class="do">Click: Create Widget</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Part 3: Add These Widget Fields</h2>
+        <p>In Discord's widget editor, create fields that match these names exactly. The names in the right column are important because the script sends data using those names.</p>
+        <table>
+          <thead>
+            <tr>
+              <th>What you want to show</th>
+              <th>Discord field type</th>
+              <th>Value Type</th>
+              <th>Data Field name</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Widget title</td><td>Text</td><td>Custom String</td><td><code>Shabii's Gamelist</code></td></tr>
+            <tr><td>Random currently-playing game cover</td><td>Image</td><td>User Data</td><td><code>game_cover_image</code></td></tr>
+            <tr><td>Top title</td><td>Text</td><td>User Data</td><td><code>game_title</code></td></tr>
+            <tr><td>Subtitle 1 platform icon</td><td>Image</td><td>User Data</td><td><code>game_subtitle_1_image</code></td></tr>
+            <tr><td>Subtitle 1 game name</td><td>Text</td><td>User Data</td><td><code>game_subtitle_1</code></td></tr>
+            <tr><td>Subtitle 1 trophies</td><td>Text</td><td>User Data</td><td><code>game_subtitle_1_trophies</code></td></tr>
+            <tr><td>Subtitle 2 platform icon</td><td>Image</td><td>User Data</td><td><code>game_subtitle_2_image</code></td></tr>
+            <tr><td>Subtitle 2 game name</td><td>Text</td><td>User Data</td><td><code>game_subtitle_2</code></td></tr>
+            <tr><td>Subtitle 2 trophies</td><td>Text</td><td>User Data</td><td><code>game_subtitle_2_trophies</code></td></tr>
+            <tr><td>Subtitle 3 platform icon</td><td>Image</td><td>User Data</td><td><code>game_subtitle_3_image</code></td></tr>
+            <tr><td>Subtitle 3 game name</td><td>Text</td><td>User Data</td><td><code>game_subtitle_3</code></td></tr>
+            <tr><td>Subtitle 3 trophies</td><td>Text</td><td>User Data</td><td><code>game_subtitle_3_trophies</code></td></tr>
+            <tr><td>Legacy/optional subtitle 1 platform icon</td><td>Image</td><td>User Data</td><td><code>platform_icon_image</code></td></tr>
+            <tr><td>Collection section label</td><td>Text</td><td>Custom String</td><td><code>Collection</code></td></tr>
+            <tr><td>Slot 1 count: total completed across all platforms</td><td>Text</td><td>User Data</td><td><code>total_completed_count</code></td></tr>
+            <tr><td>Slot 1 label</td><td>Text</td><td>Custom String</td><td><code>Total Completed</code></td></tr>
+            <tr><td>Slot 1 image</td><td>Image</td><td>User Data</td><td><code>total_completed_image</code></td></tr>
+            <tr><td>Slot 2 count: finished games this year</td><td>Text</td><td>User Data</td><td><code>finished_this_year</code></td></tr>
+            <tr><td>Slot 2 label</td><td>Text</td><td>Custom String</td><td><code>Finished This Year</code></td></tr>
+            <tr><td>Slot 2 image</td><td>Image</td><td>User Data</td><td><code>finished_this_year_image</code></td></tr>
+            <tr><td>Slot 3 count: backlog</td><td>Text</td><td>User Data</td><td><code>backlog_games</code></td></tr>
+            <tr><td>Slot 3 label</td><td>Text</td><td>Custom String</td><td><code>Backlog</code></td></tr>
+            <tr><td>Slot 3 image</td><td>Image</td><td>User Data</td><td><code>backlog_image</code></td></tr>
+            <tr><td>Slot 4 count: games in Shelf</td><td>Text</td><td>User Data</td><td><code>shelf_games</code></td></tr>
+            <tr><td>Slot 4 label</td><td>Text</td><td>Custom String</td><td><code>Games In Shelf</code></td></tr>
+            <tr><td>Slot 4 image</td><td>Image</td><td>User Data</td><td><code>shelf_image</code></td></tr>
+            <tr><td>Optional total completed count</td><td>Number</td><td>User Data</td><td><code>completed_games</code></td></tr>
+            <tr><td>Optional rotation note</td><td>Text</td><td>User Data</td><td><code>rotation_note</code></td></tr>
+          </tbody>
+        </table>
+        <div class="note"><code>game_title</code> is always sent as <code>Currently Playing</code>. Each subtitle game field is only the game name, and each matching trophy field is only the trophy count, such as <code>32/54 trophies&#10240;</code>.</div>
+        <div class="note">The cover game is randomized each time the script runs, then row 1 is set to that same game. Rows 2 and 3 are filled from the remaining currently-playing games. Add <code>game_subtitle_1_image</code>, <code>game_subtitle_2_image</code>, and <code>game_subtitle_3_image</code> beside their matching subtitle text fields.</div>
+        <div class="note">If <code>game_subtitle_2_trophies</code> does not show, make sure Discord has a published Text/User Data field with exactly that name. The local updater now warns when it generates fields that your published widget config is not using.</div>
+      </section>
+
+      <section class="card">
+        <h2>Part 4: What The Script Reads From Gamelist</h2>
+        <p>The script uses these URLs. You do not need to manually open them every time, but they are useful for testing.</p>
+        <div class="endpoint">
+          <div><code>YOUR_GAMELIST_BASE_URL/api/gamelist-games-by-list</code><br>Gets backlog count.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/completed-games-by-year</code><br>Gets total completed games and finished games this year.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/shelf-games-platforms</code><br>Gets Shelf game count.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/sync</code><br>Gets currently-playing games, covers, platforms, and started dates.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/achievements</code><br>Gets PlayStation activity summaries used as a progress fallback.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/trophies?id=GAME_ID</code><br>Gets PlayStation trophy counts when a selected game has a trophy title ID.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/steam-achievements?appId=APP_ID</code><br>Gets Steam achievement counts when a selected game has a Steam app ID.</div>
+          <div><code>YOUR_GAMELIST_BASE_URL/api/xbox-achievements?titleId=TITLE_ID</code><br>Gets Xbox achievement counts when a selected game has an Xbox title ID.</div>
+        </div>
+        <div class="note">Use <code>/api/...</code> URLs. Do not use bare paths like <code>/psn-trophies-by-year</code>.</div>
+      </section>
+
+      <section class="card">
+        <h2>Part 5: Build The Widget Data</h2>
+        <p>The single updater file, <code>update-discord-widget.mjs</code>, fetches your Gamelist info, writes Discord-ready JSON to <code>widget-data.json</code>, validates the published widget fields, and can send the update to Discord.</p>
+        <div class="step">
+          <span class="num">1</span>
+          <div>
+            <strong>Open a terminal in the Gamelist folder</strong>
+            <p>The folder is where this HTML file and <code>update-discord-widget.mjs</code> live.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div>
+            <strong>Run this command</strong>
+            <pre><code>$env:GAMELIST_BASE_URL = "https://your-gamelist-site.example"
+$env:DISCORD_BOT_TOKEN = "YOUR_BOT_TOKEN"
+$env:DISCORD_USER_ID = "YOUR_DISCORD_USER_ID"
+node .\update-discord-widget.mjs --dry-run</code></pre>
+            <p>The cover is randomized each time the script runs, and row 1 is the game shown on the cover.</p>
+          </div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div>
+            <strong>You should now have a file</strong>
+            <p>The file is called <code>widget-data.json</code>. This is what gets sent to Discord.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Part 6: Send The Data To Discord</h2>
+        <p>Recommended path: use Chloe's <a href="https://github.com/chloecinders/widget-identity-creator" target="_blank" rel="noreferrer">Widget Identity Creator</a>. It uses your bot token locally, fetches your application/widget config, validates the JSON against the published widget fields, and applies the identity data for you.</p>
+        <p>If you want to do the same thing manually, you need these values from Discord:</p>
+        <div class="two">
+          <div class="mini"><strong>Application ID</strong><p>Found in your app's Developer Portal overview.</p></div>
+          <div class="mini"><strong>Your Discord user ID</strong><p>Enable Developer Mode in Discord, right-click your profile, copy user ID.</p></div>
+          <div class="mini"><strong>Bot token</strong><p>Found under the Bot page. Keep this private. The desktop app keeps it on your machine.</p></div>
+          <div class="mini"><strong>widget-data.json</strong><p>The file created in Part 5.</p></div>
+        </div>
+        <h3>Authorize the application identity</h3>
+        <p>If the PATCH request gives <code>Invalid OAuth2 access token</code>, open these URLs after replacing the application ID, then authorize while logged into the same Discord account as your user ID:</p>
+        <pre><code>https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&amp;response_type=token&amp;scope=sdk.social_layer_presence&amp;prompt=consent
+https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&amp;response_type=token&amp;scope=openid%20sdk.social_layer_presence&amp;prompt=consent
+https://discord.com/oauth2/authorize?client_id=YOUR_APPLICATION_ID&amp;response_type=token&amp;scope=openid%20sdk.social_layer&amp;prompt=consent</code></pre>
+        <p>Chloe's app shows the first URL when Discord returns error <code>50025</code>. Discord's Social SDK docs list <code>openid</code> with <code>sdk.social_layer_presence</code> as the default presence scopes, so the updater prints both versions. You usually also need the Social SDK form completed in the Developer Portal.</p>
+        <p>Paste this into PowerShell after replacing the placeholders:</p>
+        <pre><code>$appId = "YOUR_APPLICATION_ID"
+$userId = "YOUR_DISCORD_USER_ID"
+$botToken = "YOUR_BOT_TOKEN"
+$body = Get-Content .\widget-data.json -Raw
+
+Invoke-RestMethod `
+  -Uri "https://discord.com/api/v9/applications/$appId/users/$userId/identities/0/profile" `
+  -Method PATCH `
+  -Headers @{
+    "Content-Type" = "application/json"
+    "Authorization" = "Bot $botToken"
+  } `
+  -Body $body</code></pre>
+        <h3>Or use the local updater script</h3>
+        <p>The updater builds fresh JSON, writes <code>widget-data.json</code> as UTF-8, checks your Discord widget config for field/type mismatches, and applies the identity.</p>
+        <pre><code>$env:GAMELIST_BASE_URL = "https://your-gamelist-site.example"
+$env:DISCORD_BOT_TOKEN = "YOUR_BOT_TOKEN"
+$env:DISCORD_USER_ID = "YOUR_DISCORD_USER_ID"
+node .\update-discord-widget.mjs</code></pre>
+        <p>If Discord keeps returning <code>50025</code> after authorization, copy the <code>access_token</code> from the redirected OAuth URL and try the fallback:</p>
+        <pre><code>$env:DISCORD_ACCESS_TOKEN = "ACCESS_TOKEN_FROM_REDIRECT_URL"
+node .\update-discord-widget.mjs</code></pre>
+        <p>To test without applying the update, add <code>--dry-run</code>.</p>
+        <div class="danger">If the command succeeds, do not paste the output publicly if it contains private data. Also never share the bot token.</div>
+      </section>
+
+      <section class="card">
+        <h2>Part 7: Keep It Updated</h2>
+        <p>Manual refresh is enough at first. When you want to update your widget, run the updater again.</p>
+        <pre><code>node update-discord-widget.mjs</code></pre>
+        <p>Later, you can automate this once per hour with Task Scheduler, GitHub Actions, Cloudflare Workers, or another private scheduled job. If you have more than one currently-playing game, each automated update randomizes the rows and cover.</p>
+        <div class="note">Do not update every minute. The Gamelist summary endpoints cache for one hour, and your Discord profile does not need instant updates.</div>
+      </section>
+
+      <section class="card">
+        <h2>Part 8: After It Works, Ask Me To Automate It</h2>
+        <p>Once the widget works manually, the next step is a separate Cloudflare Worker project that updates Discord on a schedule. Keep it separate from Gamelist so your Discord bot token stays isolated from the public tracker app.</p>
+
+        <h3>First, confirm the manual setup works</h3>
+        <div class="checklist">
+          <label><input type="checkbox"> The widget is published in Discord's Developer Portal.</label>
+          <label><input type="checkbox"> <code>node .\update-discord-widget.mjs --dry-run</code> creates a good JSON file.</label>
+          <label><input type="checkbox"> The PowerShell PATCH request succeeds.</label>
+          <label><input type="checkbox"> The widget on your Discord profile shows the Currently Playing rows, platform icons, cover, and Collection slots.</label>
+        </div>
+
+        <h3>Then save these values somewhere private</h3>
+        <div class="two">
+          <div class="mini"><strong>Discord application ID</strong><p>This is safe-ish, but still keep it with the automation notes.</p></div>
+          <div class="mini"><strong>Your Discord user ID</strong><p>Needed so the Worker knows whose widget profile to update.</p></div>
+          <div class="mini"><strong>Discord bot token</strong><p>Secret. Do not paste it in chat. It should become a Cloudflare Worker secret.</p></div>
+          <div class="mini"><strong>Gamelist base URL</strong><p>Use your deployed site URL and set it as <code>GAMELIST_BASE_URL</code>.</p></div>
+        </div>
+
+        <h3>What to ask me</h3>
+        <p>After the manual widget is working, ask me this:</p>
+        <pre><code>Create a separate Cloudflare Worker project that updates my Discord Gamelist widget every hour.
+Use the same Gamelist API endpoints as update-discord-widget.mjs.
+The Worker should store DISCORD_APP_ID, DISCORD_USER_ID, and DISCORD_BOT_TOKEN as secrets or vars.
+It should have a scheduled trigger and a manual /refresh endpoint.</code></pre>
+
+        <h3>What I will build for you</h3>
+        <div class="two">
+          <div class="mini"><strong>New Worker project</strong><p>A tiny project separate from Gamelist, for example <code>gamelist-discord-widget</code>.</p></div>
+          <div class="mini"><strong>Hourly scheduled trigger</strong><p>Runs once per hour and sends fresh widget data to Discord.</p></div>
+          <div class="mini"><strong>Manual refresh URL</strong><p>A private-ish endpoint like <code>/refresh</code> so you can force an update after finishing a game.</p></div>
+          <div class="mini"><strong>Secret setup commands</strong><p>Commands like <code>wrangler secret put DISCORD_BOT_TOKEN</code>, so tokens are not committed.</p></div>
+        </div>
+
+        <h3>What the automated Worker will do</h3>
+        <div class="step">
+          <span class="num">1</span>
+          <div><strong>Fetch Gamelist stats</strong><p>It calls the same cached Gamelist API routes used by the local script.</p></div>
+        </div>
+        <div class="step">
+          <span class="num">2</span>
+          <div><strong>Build Discord JSON</strong><p>It creates the same dynamic fields: random game cover, Currently Playing title, three game rows, row platform icons, total completed count, finished this year, backlog, Shelf, and slot images.</p></div>
+        </div>
+        <div class="step">
+          <span class="num">3</span>
+          <div><strong>PATCH Discord</strong><p>It sends the data to <code>/applications/{appId}/users/{userId}/identities/0/profile</code> using the bot token stored as a secret.</p></div>
+        </div>
+        <div class="step">
+          <span class="num">4</span>
+          <div><strong>Log the result</strong><p>It returns a small success/error JSON response for manual refreshes and logs failures in Cloudflare.</p></div>
+        </div>
+
+        <div class="danger">Do not send me the bot token directly. Tell me the secret name you want to use, such as <code>DISCORD_BOT_TOKEN</code>, and I will write the Worker so you can add the token with Wrangler.</div>
+      </section>
+
+      <section class="card">
+        <h2>Final Checklist</h2>
+        <div class="checklist">
+          <label><input type="checkbox"> Discord application created.</label>
+          <label><input type="checkbox"> Social SDK form submitted.</label>
+          <label><input type="checkbox"> Widget editor visible in Developer Portal.</label>
+          <label><input type="checkbox"> Widget fields added with the exact Data Field names from this guide.</label>
+          <label><input type="checkbox"> Widget published.</label>
+          <label><input type="checkbox"> Ran <code>node .\update-discord-widget.mjs --dry-run</code>.</label>
+          <label><input type="checkbox"> Sent the PATCH request to Discord.</label>
+          <label><input type="checkbox"> Widget appears on your Discord profile.</label>
+          <label><input type="checkbox"> Asked Codex to create the separate auto-update Worker.</label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>If Something Breaks</h2>
+        <h3>The widget says stats are still syncing</h3>
+        <p>Make sure the PATCH request succeeded, your app was authorized correctly, and your widget Data Field names match the JSON names exactly.</p>
+        <h3>One of the Gamelist URLs gives 404</h3>
+        <p>Use <code>/api/...</code> paths and make sure the Cloudflare Worker has been deployed after route changes.</p>
+        <h3>A subtitle only shows the game name</h3>
+        <p>This is okay when that selected game does not have linked trophy or achievement data. For PlayStation, check the game has a trophy title ID. For Steam, check it has a Steam app ID. For Xbox, check it has an Xbox title ID.</p>
+        <h3>The rows do not randomize</h3>
+        <p>Randomizing happens when <code>update-discord-widget.mjs</code> runs. Make sure the automated job is running on a schedule and that more than one active game is marked as currently playing.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

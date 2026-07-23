@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
+const MIN_COMPLETED_GAMES = 41;
 const BASE_URL = normalizeBaseUrl(
   process.env.GAMELIST_BASE_URL
   || process.env.WIDGET_BASE_URL
@@ -301,7 +302,7 @@ function achievementCompletionCount(completionsData) {
   const apiTotal = Number(completionsData?.totalCompletedGames || 0)
     || (Array.isArray(completionsData?.completedGames) ? completionsData.completedGames.length : 0)
     || (completionsData?.platforms || []).reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0);
-  return apiTotal;
+  return Math.max(apiTotal, MIN_COMPLETED_GAMES);
 }
 
 function achievementCompletionsThisYear(completionsData) {

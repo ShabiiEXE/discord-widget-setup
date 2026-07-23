@@ -1,5 +1,6 @@
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
+const MIN_COMPLETED_GAMES = 41;
 const FALLBACK_SYNC_DATA = {
   games: [
     {
@@ -339,7 +340,7 @@ function achievementCompletionCount(env, completionsData) {
   const apiTotal = Number(completionsData?.totalCompletedGames || 0)
     || (Array.isArray(completionsData?.completedGames) ? completionsData.completedGames.length : 0)
     || (completionsData?.platforms || []).reduce((sum, platform) => sum + Number(platform.totalCompletedGames || 0), 0);
-  return apiTotal;
+  return Math.max(apiTotal, MIN_COMPLETED_GAMES);
 }
 
 function achievementCompletionsThisYear(env, completionsData) {

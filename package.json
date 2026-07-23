@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "discord:auth": "node scripts/discord-auth-urls.mjs",
+    "discord:update": "node update-discord-widget.mjs",
+    "discord:dry-run": "node update-discord-widget.mjs --dry-run",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "tail": "wrangler tail"

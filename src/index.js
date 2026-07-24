@@ -1115,11 +1115,12 @@ function homePage() {
 
         list.innerHTML = updates.map((entry) => {
           const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "";
+          const type = updateTypeLabel(entry);
           const detail = entry.ok === false && entry.error
-            ? entry.error
+            ? type + " - " + entry.error
             : entry.currentGame
-              ? updateTypeLabel(entry) + " - Current: " + entry.currentGame
-              : updateTypeLabel(entry);
+              ? type + " - Current: " + entry.currentGame
+              : type;
           return '<li><strong>' + escapeText(madridTime(entry.updatedAt)) + '</strong><span class="' + resultClass + '">'
             + escapeText(updateResultLabel(entry)) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
         }).join("");

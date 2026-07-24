@@ -534,6 +534,7 @@ async function readUpdateStatus(env) {
     history: [],
     automaticUpdates: [],
     scheduledUpdates: [],
+    lastUpdate: null,
     nextScheduledAt: nextScheduledUpdateIso(),
   };
   try {
@@ -607,11 +608,14 @@ function updateStatusPayload(status) {
     .filter((entry) => entry.updatedAt)
     .slice(0, 12);
 
+  const scheduledUpdates = scheduledUpdateRows(history);
+
   return {
     ...status,
     history,
     automaticUpdates: history.filter((entry) => entry.source === "scheduled").slice(0, 6),
-    scheduledUpdates: scheduledUpdateRows(history),
+    scheduledUpdates,
+    lastUpdate: lastUpdateRow(history, scheduledUpdates),
     nextScheduledAt: nextScheduledUpdateIso(),
   };
 }
@@ -641,6 +645,23 @@ function scheduledUpdateRows(history, now = new Date()) {
       completedGames: match?.completedGames ?? null,
     };
   });
+}
+
+function lastUpdateRow(history, scheduledUpdates) {
+  const latestRecorded = history[0] || null;
+  const latestScheduled = scheduledUpdates[0] || null;
+  const recordedTime = Date.parse(latestRecorded?.updatedAt || "");
+  const scheduledTime = Date.parse(latestScheduled?.scheduledAt || "");
+
+  if (latestScheduled && (!Number.isFinite(recordedTime) || scheduledTime > recordedTime)) {
+    return {
+      ...latestScheduled,
+      source: "scheduled",
+      updatedAt: latestScheduled.updatedAt || latestScheduled.scheduledAt,
+    };
+  }
+
+  return latestRecorded;
 }
 
 function recentScheduledUpdateTimes(now = new Date(), count = 6) {
@@ -1005,11 +1026,11 @@ function homePage() {
 
       <section class="history-panel">
         <div class="history-heading">
-          <span>Cloudflare automatic updates</span>
-          <strong id="automatic-count">0 recorded</strong>
+          <span>Recorded updates</span>
+          <strong id="update-count">0 shown</strong>
         </div>
-        <ol id="automatic-updates">
-          <li>Waiting for scheduled update data.</li>
+        <ol id="recorded-updates">
+          <li>No recorded updates yet.</li>
         </ol>
       </section>
 
@@ -1065,7 +1086,13 @@ function homePage() {
         return source || "-";
       }
 
+      function updateTypeLabel(entry) {
+        const label = updateSourceLabel(entry.source);
+        return entry.recorded === false ? label + " (expected)" : label;
+      }
+
       function updateResultLabel(entry) {
+        if (entry.recorded === false) return "Expected";
         return entry.ok === true ? "Success" : entry.ok === false ? "Failed" : "Unknown";
       }
 
@@ -1077,31 +1104,25 @@ function homePage() {
           .replace(/"/g, "&quot;");
       }
 
-      function renderAutomaticUpdates(items) {
-        const list = document.getElementById("automatic-updates");
-        const count = document.getElementById("automatic-count");
-        const updates = Array.isArray(items) ? items : [];
-        const recorded = updates.filter((entry) => entry.recorded !== false).length;
-        count.textContent = recorded === 1 ? "1 recorded" : recorded + " recorded";
+      function renderRecordedUpdates(items) {
+        const list = document.getElementById("recorded-updates");
+        const count = document.getElementById("update-count");
+        const updates = (Array.isArray(items) ? items : []).slice(0, 5);
+        count.textContent = updates.length === 1 ? "1 shown" : updates.length + " shown";
         if (!updates.length) {
-          list.innerHTML = "<li>Waiting for scheduled update data.</li>";
+          list.innerHTML = "<li>No recorded updates yet.</li>";
           return;
         }
 
         list.innerHTML = updates.map((entry) => {
-          const recordedEntry = entry.recorded !== false;
-          const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "pending";
-          const resultText = recordedEntry ? updateResultLabel(entry) : "Expected";
-          const time = entry.updatedAt || entry.scheduledAt;
-          const detail = !recordedEntry
-            ? "No status recorded for this scheduled slot"
-            : entry.ok === false && entry.error
-              ? entry.error
-              : entry.currentGame
-                ? "Current: " + entry.currentGame
-                : "";
-          return '<li><strong>' + escapeText(madridTime(time)) + '</strong><span class="' + resultClass + '">'
-            + escapeText(resultText) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
+          const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "";
+          const detail = entry.ok === false && entry.error
+            ? entry.error
+            : entry.currentGame
+              ? updateTypeLabel(entry) + " - Current: " + entry.currentGame
+              : updateTypeLabel(entry);
+          return '<li><strong>' + escapeText(madridTime(entry.updatedAt)) + '</strong><span class="' + resultClass + '">'
+            + escapeText(updateResultLabel(entry)) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
         }).join("");
       }
 
@@ -1119,13 +1140,14 @@ function homePage() {
         try {
           const response = await fetch("/status", { cache: "no-store" });
           const data = await response.json();
+          const lastUpdate = data.lastUpdate || data;
           nextUpdateAt = data.nextScheduledAt || "";
-          document.getElementById("last-updated").textContent = madridTime(data.updatedAt);
-          document.getElementById("last-source").textContent = updateSourceLabel(data.source);
+          document.getElementById("last-updated").textContent = madridTime(lastUpdate.updatedAt || lastUpdate.scheduledAt);
+          document.getElementById("last-source").textContent = updateTypeLabel(lastUpdate);
           const result = document.getElementById("last-result");
-          result.textContent = updateResultLabel(data);
-          result.className = data.ok === true ? "success" : data.ok === false ? "failed" : "";
-          renderAutomaticUpdates(data.scheduledUpdates || data.automaticUpdates);
+          result.textContent = updateResultLabel(lastUpdate);
+          result.className = lastUpdate.ok === true ? "success" : lastUpdate.ok === false ? "failed" : lastUpdate.recorded === false ? "pending" : "";
+          renderRecordedUpdates(data.history);
           if (data.ok === false && data.error) status.textContent = "Last failure: " + data.error;
           updateCountdown();
         } catch {

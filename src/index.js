@@ -530,12 +530,14 @@ async function readUpdateStatus() {
     source: "",
     updatedAt: "",
     error: "",
+    history: [],
+    automaticUpdates: [],
     nextScheduledAt: nextScheduledUpdateIso(),
   };
   try {
     const response = await caches.default.match(statusCacheRequest());
     if (!response) return fallback;
-    return { ...fallback, ...(await response.json()), nextScheduledAt: nextScheduledUpdateIso() };
+    return updateStatusPayload({ ...fallback, ...(await response.json()) });
   } catch {
     return fallback;
   }
@@ -543,10 +545,19 @@ async function readUpdateStatus() {
 
 async function writeUpdateStatus(status) {
   try {
-    await caches.default.put(statusCacheRequest(), new Response(JSON.stringify({
+    const previous = await readUpdateStatus();
+    const history = [
+      updateHistoryEntry(status),
+      ...(Array.isArray(previous.history) ? previous.history : []),
+    ]
+      .filter((entry) => entry.updatedAt)
+      .slice(0, 12);
+
+    await caches.default.put(statusCacheRequest(), new Response(JSON.stringify(updateStatusPayload({
       ...status,
+      history,
       nextScheduledAt: nextScheduledUpdateIso(),
-    }), {
+    })), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "public, max-age=604800",
@@ -559,6 +570,34 @@ async function writeUpdateStatus(status) {
 
 function statusCacheRequest() {
   return new Request(STATUS_CACHE_URL);
+}
+
+function updateStatusPayload(status) {
+  const rawHistory = Array.isArray(status.history) && status.history.length
+    ? status.history
+    : [status];
+  const history = rawHistory
+    .map(updateHistoryEntry)
+    .filter((entry) => entry.updatedAt)
+    .slice(0, 12);
+
+  return {
+    ...status,
+    history,
+    automaticUpdates: history.filter((entry) => entry.source === "scheduled").slice(0, 6),
+    nextScheduledAt: nextScheduledUpdateIso(),
+  };
+}
+
+function updateHistoryEntry(status) {
+  return {
+    ok: status.ok === true ? true : status.ok === false ? false : null,
+    source: cleanEnv(status.source),
+    updatedAt: cleanEnv(status.updatedAt),
+    error: cleanEnv(status.error),
+    currentGame: cleanEnv(status.currentGame),
+    completedGames: Number.isFinite(Number(status.completedGames)) ? Number(status.completedGames) : null,
+  };
 }
 
 function nextScheduledUpdateIso(now = new Date()) {
@@ -900,6 +939,16 @@ function homePage() {
         </div>
       </section>
 
+      <section class="history-panel">
+        <div class="history-heading">
+          <span>Cloudflare automatic updates</span>
+          <strong id="automatic-count">0 recent</strong>
+        </div>
+        <ol id="automatic-updates">
+          <li>No automatic updates recorded yet.</li>
+        </ol>
+      </section>
+
       <div class="actions">
         <a class="button danger-action protected" data-path="/refresh" href="/refresh?secret=YOUR_REFRESH_SECRET">Refresh Discord</a>
       </div>
@@ -946,6 +995,46 @@ function homePage() {
         }).format(new Date(value));
       }
 
+      function updateSourceLabel(source) {
+        if (source === "scheduled") return "Cloudflare automatic";
+        if (source === "manual") return "Manual";
+        return source || "-";
+      }
+
+      function updateResultLabel(entry) {
+        return entry.ok === true ? "Success" : entry.ok === false ? "Failed" : "Unknown";
+      }
+
+      function escapeText(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;");
+      }
+
+      function renderAutomaticUpdates(items) {
+        const list = document.getElementById("automatic-updates");
+        const count = document.getElementById("automatic-count");
+        const updates = Array.isArray(items) ? items : [];
+        count.textContent = updates.length === 1 ? "1 recent" : updates.length + " recent";
+        if (!updates.length) {
+          list.innerHTML = "<li>No automatic updates recorded yet.</li>";
+          return;
+        }
+
+        list.innerHTML = updates.map((entry) => {
+          const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "";
+          const detail = entry.ok === false && entry.error
+              ? entry.error
+              : entry.currentGame
+                ? "Current: " + entry.currentGame
+                : "";
+          return '<li><strong>' + escapeText(madridTime(entry.updatedAt)) + '</strong><span class="' + resultClass + '">'
+            + escapeText(updateResultLabel(entry)) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
+        }).join("");
+      }
+
       function updateCountdown() {
         const target = nextUpdateAt ? new Date(nextUpdateAt).getTime() : 0;
         const remaining = Math.max(0, target - Date.now());
@@ -962,10 +1051,11 @@ function homePage() {
           const data = await response.json();
           nextUpdateAt = data.nextScheduledAt || "";
           document.getElementById("last-updated").textContent = madridTime(data.updatedAt);
-          document.getElementById("last-source").textContent = data.source || "-";
+          document.getElementById("last-source").textContent = updateSourceLabel(data.source);
           const result = document.getElementById("last-result");
-          result.textContent = data.ok === true ? "Success" : data.ok === false ? "Failed" : "Unknown";
+          result.textContent = updateResultLabel(data);
           result.className = data.ok === true ? "success" : data.ok === false ? "failed" : "";
+          renderAutomaticUpdates(data.automaticUpdates);
           if (data.ok === false && data.error) status.textContent = "Last failure: " + data.error;
           updateCountdown();
         } catch {
@@ -1238,6 +1328,66 @@ function pageShell(title, body) {
       overflow-wrap: anywhere;
       color: var(--text);
       font-size: 14px;
+    }
+
+    .history-panel {
+      margin: 10px 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 12px;
+    }
+
+    .history-heading {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--dim);
+      font-size: 12px;
+      text-transform: uppercase;
+    }
+
+    .history-heading strong {
+      color: var(--text);
+      font-size: 12px;
+    }
+
+    .history-panel ol {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .history-panel li {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 10px;
+      min-width: 0;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .history-panel li:first-child {
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .history-panel li strong {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .history-panel li small {
+      grid-column: 1 / -1;
+      overflow-wrap: anywhere;
+      color: var(--muted);
+      font-size: 12px;
     }
 
     .success { color: var(--accent-1) !important; }

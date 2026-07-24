@@ -1081,14 +1081,13 @@ function homePage() {
       }
 
       function updateSourceLabel(source) {
-        if (source === "scheduled") return "Cloudflare automatic";
+        if (source === "scheduled") return "Cloudflare";
         if (source === "manual") return "Manual";
         return source || "-";
       }
 
       function updateTypeLabel(entry) {
-        const label = updateSourceLabel(entry.source);
-        return entry.recorded === false ? label + " (expected)" : label;
+        return updateSourceLabel(entry.source);
       }
 
       function updateResultLabel(entry) {

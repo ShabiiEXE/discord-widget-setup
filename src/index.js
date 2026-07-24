@@ -1,6 +1,7 @@
 const DISCORD_API_BASE = "https://discord.com/api";
 const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
 const STATUS_CACHE_URL = "https://gamelist-discord-widget.local/status";
+const STATUS_KV_KEY = "discord-widget-update-status";
 const FALLBACK_SYNC_DATA = {
   games: [
     {
@@ -77,7 +78,7 @@ export default {
     }
 
     if (url.pathname === "/status") {
-      return jsonResponse(await readUpdateStatus());
+      return jsonResponse(await readUpdateStatus(env));
     }
 
     return homePage();
@@ -92,7 +93,7 @@ async function runAndRecordUpdate(env, source) {
   try {
     const result = await updateDiscordWidget(env, source);
     const status = { ok: true, ...result };
-    await writeUpdateStatus(status);
+    await writeUpdateStatus(env, status);
     return status;
   } catch (error) {
     console.error(error);
@@ -101,7 +102,7 @@ async function runAndRecordUpdate(env, source) {
       source,
       updatedAt: new Date().toISOString(),
     };
-    await writeUpdateStatus(status);
+    await writeUpdateStatus(env, status);
     return status;
   }
 }
@@ -524,7 +525,7 @@ function achievementCompletionSummary(env, completionsData) {
   return `${achievementCompletionCount(env, completionsData)} (${achievementCompletionsThisYear(env, completionsData)} this year)`;
 }
 
-async function readUpdateStatus() {
+async function readUpdateStatus(env) {
   const fallback = {
     ok: null,
     source: "",
@@ -532,9 +533,13 @@ async function readUpdateStatus() {
     error: "",
     history: [],
     automaticUpdates: [],
+    scheduledUpdates: [],
     nextScheduledAt: nextScheduledUpdateIso(),
   };
   try {
+    const kvStatus = await readUpdateStatusFromKv(env);
+    if (kvStatus) return updateStatusPayload({ ...fallback, ...kvStatus });
+
     const response = await caches.default.match(statusCacheRequest());
     if (!response) return fallback;
     return updateStatusPayload({ ...fallback, ...(await response.json()) });
@@ -543,9 +548,9 @@ async function readUpdateStatus() {
   }
 }
 
-async function writeUpdateStatus(status) {
+async function writeUpdateStatus(env, status) {
   try {
-    const previous = await readUpdateStatus();
+    const previous = await readUpdateStatus(env);
     const history = [
       updateHistoryEntry(status),
       ...(Array.isArray(previous.history) ? previous.history : []),
@@ -553,11 +558,14 @@ async function writeUpdateStatus(status) {
       .filter((entry) => entry.updatedAt)
       .slice(0, 12);
 
-    await caches.default.put(statusCacheRequest(), new Response(JSON.stringify(updateStatusPayload({
+    const payload = updateStatusPayload({
       ...status,
       history,
       nextScheduledAt: nextScheduledUpdateIso(),
-    })), {
+    });
+
+    await writeUpdateStatusToKv(env, payload);
+    await caches.default.put(statusCacheRequest(), new Response(JSON.stringify(payload), {
       headers: {
         "Content-Type": "application/json; charset=utf-8",
         "Cache-Control": "public, max-age=604800",
@@ -565,6 +573,24 @@ async function writeUpdateStatus(status) {
     }));
   } catch {
     // Status is best-effort; widget updates should not fail if cache writes do.
+  }
+}
+
+async function readUpdateStatusFromKv(env) {
+  if (!env?.UPDATE_STATUS?.get) return null;
+  try {
+    return await env.UPDATE_STATUS.get(STATUS_KV_KEY, "json");
+  } catch {
+    return null;
+  }
+}
+
+async function writeUpdateStatusToKv(env, status) {
+  if (!env?.UPDATE_STATUS?.put) return;
+  try {
+    await env.UPDATE_STATUS.put(STATUS_KV_KEY, JSON.stringify(status));
+  } catch {
+    // KV status is best-effort; cache fallback still gives us a chance to show recent data.
   }
 }
 
@@ -585,6 +611,7 @@ function updateStatusPayload(status) {
     ...status,
     history,
     automaticUpdates: history.filter((entry) => entry.source === "scheduled").slice(0, 6),
+    scheduledUpdates: scheduledUpdateRows(history),
     nextScheduledAt: nextScheduledUpdateIso(),
   };
 }
@@ -598,6 +625,43 @@ function updateHistoryEntry(status) {
     currentGame: cleanEnv(status.currentGame),
     completedGames: Number.isFinite(Number(status.completedGames)) ? Number(status.completedGames) : null,
   };
+}
+
+function scheduledUpdateRows(history, now = new Date()) {
+  const automaticUpdates = history.filter((entry) => entry.source === "scheduled");
+  return recentScheduledUpdateTimes(now, 6).map((scheduledAt) => {
+    const match = automaticUpdates.find((entry) => sameScheduleSlot(entry.updatedAt, scheduledAt));
+    return {
+      scheduledAt,
+      updatedAt: match?.updatedAt || "",
+      ok: match ? match.ok : null,
+      recorded: Boolean(match),
+      error: match?.error || "",
+      currentGame: match?.currentGame || "",
+      completedGames: match?.completedGames ?? null,
+    };
+  });
+}
+
+function recentScheduledUpdateTimes(now = new Date(), count = 6) {
+  const cursor = new Date(now);
+  const minutes = cursor.getUTCMinutes();
+  cursor.setUTCSeconds(0, 0);
+  cursor.setUTCMinutes(minutes < 30 ? 0 : 30);
+
+  const updates = [];
+  for (let index = 0; index < count; index += 1) {
+    updates.push(cursor.toISOString());
+    cursor.setUTCMinutes(cursor.getUTCMinutes() - 30);
+  }
+  return updates;
+}
+
+function sameScheduleSlot(updatedAt, scheduledAt) {
+  const updatedTime = Date.parse(updatedAt);
+  const scheduledTime = Date.parse(scheduledAt);
+  if (!Number.isFinite(updatedTime) || !Number.isFinite(scheduledTime)) return false;
+  return updatedTime >= scheduledTime && updatedTime < scheduledTime + 30 * 60 * 1000;
 }
 
 function nextScheduledUpdateIso(now = new Date()) {
@@ -942,10 +1006,10 @@ function homePage() {
       <section class="history-panel">
         <div class="history-heading">
           <span>Cloudflare automatic updates</span>
-          <strong id="automatic-count">0 recent</strong>
+          <strong id="automatic-count">0 recorded</strong>
         </div>
         <ol id="automatic-updates">
-          <li>No automatic updates recorded yet.</li>
+          <li>Waiting for scheduled update data.</li>
         </ol>
       </section>
 
@@ -1017,21 +1081,27 @@ function homePage() {
         const list = document.getElementById("automatic-updates");
         const count = document.getElementById("automatic-count");
         const updates = Array.isArray(items) ? items : [];
-        count.textContent = updates.length === 1 ? "1 recent" : updates.length + " recent";
+        const recorded = updates.filter((entry) => entry.recorded !== false).length;
+        count.textContent = recorded === 1 ? "1 recorded" : recorded + " recorded";
         if (!updates.length) {
-          list.innerHTML = "<li>No automatic updates recorded yet.</li>";
+          list.innerHTML = "<li>Waiting for scheduled update data.</li>";
           return;
         }
 
         list.innerHTML = updates.map((entry) => {
-          const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "";
-          const detail = entry.ok === false && entry.error
+          const recordedEntry = entry.recorded !== false;
+          const resultClass = entry.ok === true ? "success" : entry.ok === false ? "failed" : "pending";
+          const resultText = recordedEntry ? updateResultLabel(entry) : "Expected";
+          const time = entry.updatedAt || entry.scheduledAt;
+          const detail = !recordedEntry
+            ? "No status recorded for this scheduled slot"
+            : entry.ok === false && entry.error
               ? entry.error
               : entry.currentGame
                 ? "Current: " + entry.currentGame
                 : "";
-          return '<li><strong>' + escapeText(madridTime(entry.updatedAt)) + '</strong><span class="' + resultClass + '">'
-            + escapeText(updateResultLabel(entry)) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
+          return '<li><strong>' + escapeText(madridTime(time)) + '</strong><span class="' + resultClass + '">'
+            + escapeText(resultText) + '</span>' + (detail ? '<small>' + escapeText(detail) + '</small>' : '') + '</li>';
         }).join("");
       }
 
@@ -1055,7 +1125,7 @@ function homePage() {
           const result = document.getElementById("last-result");
           result.textContent = updateResultLabel(data);
           result.className = data.ok === true ? "success" : data.ok === false ? "failed" : "";
-          renderAutomaticUpdates(data.automaticUpdates);
+          renderAutomaticUpdates(data.scheduledUpdates || data.automaticUpdates);
           if (data.ok === false && data.error) status.textContent = "Last failure: " + data.error;
           updateCountdown();
         } catch {
@@ -1392,6 +1462,7 @@ function pageShell(title, body) {
 
     .success { color: var(--accent-1) !important; }
     .failed { color: var(--danger) !important; }
+    .pending { color: var(--dim) !important; }
 
     @media (max-width: 560px) {
       body { padding: 16px; }

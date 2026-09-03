@@ -144,7 +144,7 @@ async function buildWidgetData() {
     maybeGetJson("/api/gamelist-games-by-list"),
     maybeGetJson("/api/completed-games-by-year"),
     waitForAchievementCompletions(),
-    maybeGetJson("/api/shelf-games-platforms"),
+    maybeGetJson("/api/shelf"),
     maybeGetJson("/api/sync"),
     maybeGetJson("/api/achievements"),
   ]);
@@ -282,15 +282,30 @@ function startedSortValue(game) {
 }
 
 function backlogCount(listsData, syncData) {
-  const listCount = (listsData?.lists || []).find((item) => item.list === "backlog")?.count;
-  if (Number.isFinite(Number(listCount))) return Number(listCount);
-  return activeGames(syncData).filter((game) => game.section === "backlog").length;
+  const backlogList = (listsData?.lists || []).find((item) => item.list === "backlog");
+  if (Array.isArray(backlogList?.games)) return backlogList.games.filter(isUncompletedGame).length;
+  return activeGames(syncData).filter((game) => game.section === "backlog" && isUncompletedGame(game)).length;
+}
+
+function isUncompletedGame(game) {
+  return !String(game?.completedAt || "").trim();
 }
 
 function shelfCount(shelfData, syncData) {
+  const shelfGames = mergedShelfGames(shelfData);
+  if (shelfGames) return shelfGames.filter((game) => !game.deletedAt).length;
   const shelfTotal = Number(shelfData?.totalGames || 0);
   if (shelfTotal) return shelfTotal;
   return Array.isArray(syncData?.games) ? syncData.games.filter((game) => !game.deletedAt).length : 0;
+}
+
+function mergedShelfGames(shelfData) {
+  if (!Array.isArray(shelfData?.sourceGames) && !Array.isArray(shelfData?.games)) return null;
+  const overrides = shelfData?.overrides || {};
+  return [
+    ...(shelfData.sourceGames || []).map((game) => ({ ...game, ...(overrides[game.id] || {}) })),
+    ...(shelfData.games || []),
+  ];
 }
 
 function completedCount(completedData) {

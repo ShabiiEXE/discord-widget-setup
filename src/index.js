@@ -122,7 +122,22 @@ async function updateDiscordWidget(env, source) {
     username: widgetData.username,
     currentGame: field("game_subtitle_1") || field("game_subtitle_1_trophies") || "",
     completedGames: field("completed_games") || 0,
+    discordApp: discordAppData(widgetData),
   };
+}
+
+function discordAppData(widgetData) {
+  const dynamic = Array.isArray(widgetData?.data?.dynamic) ? widgetData.data.dynamic : [];
+  const fields = Object.fromEntries(dynamic.map((entry) => [entry.name, discordFieldValue(entry.value)]));
+  return {
+    username: cleanEnv(widgetData?.username),
+    fields,
+  };
+}
+
+function discordFieldValue(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return cleanEnv(value.url) || value;
+  return value;
 }
 
 async function patchDiscordIdentity(env, widgetData) {
@@ -643,6 +658,18 @@ function updateHistoryEntry(status) {
     error: cleanEnv(status.error),
     currentGame: cleanEnv(status.currentGame),
     completedGames: Number.isFinite(Number(status.completedGames)) ? Number(status.completedGames) : null,
+    discordApp: normalizeDiscordAppData(status.discordApp),
+  };
+}
+
+function normalizeDiscordAppData(data) {
+  if (!data || typeof data !== "object") return null;
+  const fields = data.fields && typeof data.fields === "object" && !Array.isArray(data.fields)
+    ? Object.fromEntries(Object.entries(data.fields).map(([key, value]) => [cleanEnv(key), value]).filter(([key]) => key))
+    : {};
+  return {
+    username: cleanEnv(data.username),
+    fields,
   };
 }
 
@@ -658,6 +685,7 @@ function scheduledUpdateRows(history, now = new Date()) {
       error: match?.error || "",
       currentGame: match?.currentGame || "",
       completedGames: match?.completedGames ?? null,
+      discordApp: match?.discordApp || null,
     };
   });
 }
@@ -1049,6 +1077,16 @@ function homePage() {
         </ol>
       </section>
 
+      <section class="discord-panel">
+        <div class="history-heading">
+          <span>Discord app data</span>
+          <strong id="discord-field-count">0 fields</strong>
+        </div>
+        <dl id="discord-app-data">
+          <div><dt>No widget data yet.</dt><dd>Run a refresh to record the latest Discord payload.</dd></div>
+        </dl>
+      </section>
+
       <div class="actions">
         <a class="button danger-action protected" data-path="/refresh" href="/refresh?secret=YOUR_REFRESH_SECRET">Refresh Discord</a>
       </div>
@@ -1141,6 +1179,25 @@ function homePage() {
         }).join("");
       }
 
+      function renderDiscordAppData(appData) {
+        const list = document.getElementById("discord-app-data");
+        const count = document.getElementById("discord-field-count");
+        const fields = appData && appData.fields && typeof appData.fields === "object" ? appData.fields : {};
+        const rows = [
+          ["username", appData && appData.username],
+          ...Object.entries(fields),
+        ].filter(([name]) => name);
+        count.textContent = rows.length === 1 ? "1 field" : rows.length + " fields";
+        if (!rows.length) {
+          list.innerHTML = "<div><dt>No widget data yet.</dt><dd>Run a refresh to record the latest Discord payload.</dd></div>";
+          return;
+        }
+        list.innerHTML = rows.map(([name, value]) => {
+          const displayValue = value && typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+          return "<div><dt>" + escapeText(name) + "</dt><dd>" + escapeText(displayValue || "-") + "</dd></div>";
+        }).join("");
+      }
+
       function updateCountdown() {
         const target = nextUpdateAt ? new Date(nextUpdateAt).getTime() : 0;
         const remaining = Math.max(0, target - Date.now());
@@ -1163,6 +1220,7 @@ function homePage() {
           result.textContent = updateResultLabel(lastUpdate);
           result.className = lastUpdate.ok === true ? "success" : lastUpdate.ok === false ? "failed" : lastUpdate.recorded === false ? "pending" : "";
           renderRecordedUpdates(data.history);
+          renderDiscordAppData(lastUpdate.discordApp || data.discordApp);
           if (data.ok === false && data.error) status.textContent = "Last failure: " + data.error;
           updateCountdown();
         } catch {
@@ -1445,6 +1503,14 @@ function pageShell(title, body) {
       padding: 12px;
     }
 
+    .discord-panel {
+      margin: 10px 0 8px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-strong);
+      padding: 12px;
+    }
+
     .history-heading {
       display: flex;
       justify-content: space-between;
@@ -1457,6 +1523,36 @@ function pageShell(title, body) {
     .history-heading strong {
       color: var(--text);
       font-size: 12px;
+    }
+
+    .discord-panel dl {
+      display: grid;
+      gap: 8px;
+      margin: 12px 0 0;
+    }
+
+    .discord-panel dl div {
+      display: grid;
+      grid-template-columns: minmax(130px, 0.45fr) minmax(0, 1fr);
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 8px;
+    }
+
+    .discord-panel dt,
+    .discord-panel dd {
+      min-width: 0;
+      margin: 0;
+      overflow-wrap: anywhere;
+      font-size: 12px;
+    }
+
+    .discord-panel dt {
+      color: var(--dim);
+    }
+
+    .discord-panel dd {
+      color: var(--text);
     }
 
     .history-panel ol {

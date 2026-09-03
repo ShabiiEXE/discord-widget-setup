@@ -1,7 +1,7 @@
 import { writeFile } from "node:fs/promises";
 
 const DISCORD_API_BASE = "https://discord.com/api";
-const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
+const DEFAULT_BASE_URL = "https://gamelist.shabii.workers.dev";
 const BASE_URL = normalizeBaseUrl(
   process.env.GAMELIST_BASE_URL
   || process.env.WIDGET_BASE_URL

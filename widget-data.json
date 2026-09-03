@@ -5,7 +5,7 @@
         "name": "game_cover_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/api/cover?width=152&height=152&fit=cover&src=https%3A%2F%2Fimages.igdb.com%2Figdb%2Fimage%2Fupload%2Ft_cover_big%2Fco670h.jpg"
+          "url": "https://gamelist.shabii.workers.dev/api/cover?width=152&height=152&fit=cover&src=https%3A%2F%2Fimages.igdb.com%2Figdb%2Fimage%2Fupload%2Ft_cover_big%2Fco670h.jpg"
         }
       },
       {
@@ -17,14 +17,14 @@
         "name": "platform_icon_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/platforms/playstation.png"
         }
       },
       {
         "name": "game_subtitle_1_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/platforms/playstation.png"
         }
       },
       {
@@ -41,7 +41,7 @@
         "name": "game_subtitle_2_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/switch.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/platforms/switch.png"
         }
       },
       {
@@ -58,7 +58,7 @@
         "name": "game_subtitle_3_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/platforms/playstation.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/platforms/playstation.png"
         }
       },
       {
@@ -80,7 +80,7 @@
         "name": "total_completed_count_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/completed_games.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/discord/completed_games.png"
         }
       },
       {
@@ -92,7 +92,7 @@
         "name": "finished_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/finished_games.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/discord/finished_games.png"
         }
       },
       {
@@ -104,7 +104,7 @@
         "name": "backlog_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/app-Icon.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/app-Icon.png"
         }
       },
       {
@@ -116,7 +116,7 @@
         "name": "shelf_image",
         "type": 3,
         "value": {
-          "url": "https://gamelist.shabiimitjans.workers.dev/assets/discord/shelf.png"
+          "url": "https://gamelist.shabii.workers.dev/assets/discord/shelf.png"
         }
       },
       {

@@ -14,4 +14,4 @@ service = "gamelist"
 crons = ["*/30 * * * *"]
 
 [vars]
-GAMELIST_BASE_URL = "https://gamelist.shabiimitjans.workers.dev"
+GAMELIST_BASE_URL = "https://gamelist.shabii.workers.dev"

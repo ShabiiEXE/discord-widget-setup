@@ -1,5 +1,5 @@
 const DISCORD_API_BASE = "https://discord.com/api";
-const DEFAULT_BASE_URL = "https://gamelist.shabiimitjans.workers.dev";
+const DEFAULT_BASE_URL = "https://gamelist.shabii.workers.dev";
 const STATUS_CACHE_URL = "https://gamelist-discord-widget.local/status";
 const STATUS_KV_KEY = "discord-widget-update-status";
 const FALLBACK_SYNC_DATA = {
